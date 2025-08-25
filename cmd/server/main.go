@@ -82,9 +82,6 @@ func AutoMigrate(db *gorm.DB) error {
 
 	err := db.AutoMigrate(
 		&models.DbConnection{},
-		// Aquí se agregarán más modelos en el futuro
-		// &models.User{},
-		// &models.UserActivity{},
 	)
 
 	if err != nil {
@@ -148,6 +145,7 @@ func SeedDatabase(db *gorm.DB) error {
 func SetupRoutes(
 	app *fiber.App,
 	dbConnectionHandler *handlers.DbConnectionHandler,
+	consultasHandler *handlers.ConsultasHandler,
 ) {
 	// Middleware global
 	app.Use(logger.New(logger.Config{
@@ -187,6 +185,9 @@ func SetupRoutes(
 
 	// Registrar rutas de conexiones de BD
 	dbConnectionHandler.RegisterRoutes(api)
+
+	// Registrar rutas de consultas
+	consultasHandler.RegisterRoutes(api)
 }
 
 func main() {
@@ -213,6 +214,11 @@ func main() {
 	dbConnectionService := services.NewDbConnectionService(dbConnectionRepo)
 	dbConnectionHandler := handlers.NewDbConnectionHandler(dbConnectionService)
 
+	// Iniciar consultas
+	consultasRepositori := repositories.NewConsutasRepository(db)
+	consultaHandler := services.NewConsultasService(consultasRepositori)
+	consultasHandler := handlers.NewConsultasHandler(consultaHandler)
+
 	// Configurar Fiber
 	app := fiber.New(fiber.Config{
 		AppName:      "Invoice System API v1.0.0",
@@ -232,7 +238,7 @@ func main() {
 	})
 
 	// Configurar rutas
-	SetupRoutes(app, dbConnectionHandler)
+	SetupRoutes(app, dbConnectionHandler, consultasHandler)
 
 	// Iniciar servidor
 	port := ":" + config.ServerPort

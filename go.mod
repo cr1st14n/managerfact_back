@@ -1,6 +1,6 @@
 module managerfact
 
-go 1.24.0
+go 1.23.9
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
@@ -53,5 +53,6 @@ require (
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
+	gorm.io/driver/sqlserver v1.6.1 // indirect
 	gorm.io/gorm v1.30.1 // indirect
 )
