@@ -58,14 +58,20 @@ type FacturacionDetalles struct {
 }
 
 type SFE_factura struct {
-	Numero_factura      string `gorm:"column:numero_factura"`
-	Cuf                 string `gorm:"column:cuf"`
-	Fecha_emision       string `gorm:"column:fecha_emision"`
-	Fecha_envio         string `gorm:"column:fecha_envio"`
-	Nombre_razon_social string `gorm:"column:nombre_razon_social"`
-	Codigo_producto_sfe string `gorm:"column:codigo_producto_sfe"`
-	Sub_total           string `gorm:"column:"`
-	Precio_unitario     string `gorm:"column:precio_unitario"`
+	NumeroFactura         string `gorm:"column:numero_factura" json:"numero_factura"`
+	NombreRazonSolcial    string `gorm:"column:nombre_razon_social" json:"nombre_razon_social"`
+	NumeroDocumento       string `gorm:"column:numero_documento" json:"numero_documento"`
+	CodigoProductoSfe     string `gorm:"column:codigo_producto_sfe" json:"codigo_producto_sfe"`
+	Descripcion           string `gorm:"column:descripcion" json:"descripcion"`
+	SubTotal              string `gorm:"column:sub_total" json:"sub_total"`
+	Cuf                   string `gorm:"column:cuf" json:"cuf"`
+	FechaEmision          string `gorm:"column:fecha_emision" json:"fecha_emision"`
+	FechaEnvio            string `gorm:"column:fecha_envio" json:"fecha_envio"`
+	EstadoDocumentoFiscal string `gorm:"column:estado_documento_fiscal" json:"estado_documento_fiscal"`
+	UsuarioEmision        string `gorm:"column:usuario_emision" json:"usuario_emision"`
+	Nombre                string `gorm:"column:nombre" json:"nombre"`
+	CodigoSucursalSin     string `gorm:"column:codigo_sucursal_sin" json:"codigo_sucursal_sin"`
+	TipoFactura           string `gorm:"column:tipo_factura" json:"tipo_factura"`
 }
 
 // type FacturacionNaabol struct {

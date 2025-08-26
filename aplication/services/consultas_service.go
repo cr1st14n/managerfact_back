@@ -63,8 +63,33 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 	}
 	var facturas []models.SFE_factura
 
-	if err := db.Table("sfe_documento_fiscal as df").Select("df.numero_factura, df.cuf, df.fecha_emision, df.fecha_envio, df.nombre_razon_social, df.codigo_producto_sfe, df.sub_total, dff.precio_unitario").Joins("left join FacturacionNaabol.dbo.sfe_detalle_documento_fiscal as dff ON df.id = dff.id_sfe_documento_fiscal").Where("numero_factura = ?", data.NumeroDocumento).Find(&facturas).Error; err != nil {
-		return nil, err
+	// Construir query base
+	query := db.Table("sfe_documento_fiscal as df").
+		Select("df.numero_factura, df.nombre_razon_social, df.numero_documento, dff.codigo_producto_sfe, dff.descripcion, dff.sub_total, df.cuf, df.fecha_emision, df.fecha_envio, df.estado_documento_fiscal, df.usuario_emision, su.nombre, su.codigo_sucursal_sin, df.tipo_factura").
+		Joins("join FacturacionNaabol.dbo.sfe_detalle_documento_fiscal as dff ON df.id = dff.id_sfe_documento_fiscal").
+		Joins("join FacturacionNaabol.dbo.sfe_sucursal as su ON df.id_sfe_sucursal = su.id")
+
+	// Aplicar filtros obligatorios
+	query = query.Where("df.fecha_emision >= ? AND df.fecha_emision <= ?", data.FechaDesde, data.FechaHasta)
+	if data.Sucursal != "" {
+		query = query.Where("su.codigo_sucursal_sin = ?", data.Sucursal)
+	}
+
+	// Aplicar filtros opcionales solo si no están vacíos
+	if data.NumeroDocumento != "" {
+		query = query.Where("df.numero_documento = ?", data.NumeroDocumento)
+	}
+	if data.NumeroFactura != "" {
+		query = query.Where("df.numero_factura = ?", data.NumeroFactura)
+	}
+
+	if data.CodigoProducto != "" {
+		query = query.Where("dff.codigo_producto_sfe = ?", data.CodigoProducto)
+	}
+
+	// Ejecutar query
+	if err := query.Find(&facturas).Error; err != nil {
+		return nil, fmt.Errorf("error al buscar facturas: %w", err)
 	}
 
 	if len(facturas) == 0 {
