@@ -74,6 +74,28 @@ type SFE_factura struct {
 	TipoFactura           string `gorm:"column:tipo_factura" json:"tipo_factura"`
 }
 
+type SFE_sucursales struct {
+	ID                    string `gorm:"column:id" json:"id"`
+	CreatedBy             string `gorm:"column:created_by" json:"created_by"`
+	CreatedDate           string `gorm:"column:created_date" json:"created_date"`
+	Estado                string `gorm:"column:estado" json:"estado"`
+	LastModified_by       string `gorm:"column:last_modified_by" json:"last_modified_by"`
+	LastModified_date     string `gorm:"column:last_modified_date" json:"last_modified_date"`
+	Version               string `gorm:"column:version" json:"version"`
+	CodigoSucursal        string `gorm:"column:codigo_sucursal" json:"codigo_sucursal"`
+	CodigoSucursal_sin    string `gorm:"column:codigo_sucursal_sin" json:"codigo_sucursal_sin"`
+	Desvinculado          string `gorm:"column:desvinculado" json:"desvinculado"`
+	Direccion             string `gorm:"column:direccion" json:"direccion"`
+	EstadoSucursal        string `gorm:"column:estado_sucursal" json:"estado_sucursal"`
+	MunicipioDepartamento string `gorm:"column:municipio_departamento" json:"municipio_departamento"`
+	Nombre                string `gorm:"column:nombre" json:"nombre"`
+	NombreSecuencia       string `gorm:"column:nombre_secuencia" json:"nombre_secuencia"`
+	Principal             string `gorm:"column:principal" json:"principal"`
+	NroTelefono           string `gorm:"column:nro_telefono" json:"nro_telefono"`
+	Zona                  string `gorm:"column:zona" json:"zona"`
+	IdSfeEmpresa          string `gorm:"column:id_sfe_empresa" json:"id_sfe_empresa"`
+}
+
 // type FacturacionNaabol struct {
 // 	ID                          uint                  `gorm:"primaryKey;column:id"`
 // 	CreatedBy                   string                `gorm:"column:created_by"`

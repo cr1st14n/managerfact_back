@@ -72,7 +72,7 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 	// Aplicar filtros obligatorios
 	query = query.Where("df.fecha_emision >= ? AND df.fecha_emision <= ?", data.FechaDesde, data.FechaHasta)
 	if data.Sucursal != "" {
-		query = query.Where("su.codigo_sucursal_sin = ?", data.Sucursal)
+		query = query.Where("su.id = ?", data.Sucursal)
 	}
 
 	// Aplicar filtros opcionales solo si no están vacíos
@@ -100,4 +100,53 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 	// Puedes usar 'db' para tus operaciones GORM
 
 	return &facturas, nil
+}
+
+func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales, error) {
+	idServer_parse, err := strconv.ParseInt(idServer, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	server, errServer := s.ConsultasRepo.GetServidorById(idServer_parse)
+	if errServer != nil {
+		return nil, errServer
+	}
+	// Construcción del DSN (Data Source Name) para SQL Server
+	dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s",
+		server.Username,
+		server.Password,
+		server.Host,
+		server.Port,
+		server.DatabaseName,
+	)
+
+	var db *gorm.DB
+
+	// Intentar conectar primero para verificar si hay conexión activa
+	db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo conectar: %w", err)
+	}
+
+	// Verificar si la conexión está activa
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer sqlDB.Close()
+
+	// Ping para confirmar conexión
+	if err := sqlDB.Ping(); err != nil {
+		// Si falla, intentar crear nueva conexión
+		db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+		if err != nil {
+			return nil, fmt.Errorf("error al crear nueva conexión: %w", err)
+		}
+	}
+	var servidores []models.SFE_sucursales
+	errDataSuc := db.Table("sfe_sucursal").Find(&servidores).Error
+	if errDataSuc != nil {
+		return nil, errDataSuc
+	}
+	return &servidores, nil
 }

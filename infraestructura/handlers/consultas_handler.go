@@ -60,8 +60,25 @@ func (h *ConsultasHandler) DataFacturas(c *fiber.Ctx) error {
 	})
 }
 
+func (h *ConsultasHandler) Sucursales(c *fiber.Ctx) error {
+	var idServer = c.Query("idServer")
+	data, err := h.ConsultasService.Sucursales(idServer)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error de consulta",
+			"error":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message": "Sucursales registradas",
+		"data":    data,
+	})
+	// return nil
+}
+
 func (h *ConsultasHandler) RegisterRoutes(router fiber.Router) {
 	connections := router.Group("/consultar")
 
 	connections.Post("/", h.DataFacturas)
+	connections.Get("/sucursales", h.Sucursales)
 }
