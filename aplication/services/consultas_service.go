@@ -70,8 +70,10 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 		Joins("join FacturacionNaabol.dbo.sfe_sucursal as su ON df.id_sfe_sucursal = su.id")
 
 	// Aplicar filtros obligatorios
-	query = query.Where("df.fecha_emision >= ? AND df.fecha_emision <= ?", data.FechaDesde, data.FechaHasta)
+	query = query.Where("df.fecha_emision >= ? AND df.fecha_emision <= ?", data.FechaDesde, data.FechaHasta+" 23:59:59")
+
 	if data.Sucursal != "" {
+		fmt.Println("buscando con sucursal ", data.Sucursal)
 		query = query.Where("su.id = ?", data.Sucursal)
 	}
 
