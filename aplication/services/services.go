@@ -23,7 +23,7 @@ type DbConnectionService interface {
 	GetConnection(id uint) (*models.DbConnection, error)
 	GetConnectionByName(serverName string) (*models.DbConnection, error)
 	GetAllConnections() ([]models.DbConnection, error)
-	GetActiveConnections() ([]models.DbConnection, error)
+	GetActiveConnections(tipo string) ([]models.DbConnection, error)
 	UpdateConnection(connection *models.DbConnection) error
 	DeleteConnection(id uint) error
 	SoftDeleteConnection(id uint) error
@@ -131,7 +131,10 @@ func (s *dbConnectionService) GetAllConnections() ([]models.DbConnection, error)
 }
 
 // GetActiveConnections obtiene solo las conexiones activas
-func (s *dbConnectionService) GetActiveConnections() ([]models.DbConnection, error) {
+func (s *dbConnectionService) GetActiveConnections(tipo string) ([]models.DbConnection, error) {
+	if tipo != "" {
+		return s.repo.GetAllActiveByType(tipo)
+	}
 	return s.repo.GetAllActive()
 }
 

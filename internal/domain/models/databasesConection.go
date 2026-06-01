@@ -21,6 +21,7 @@ type DbConnection struct {
 	Password     string         `json:"password" gorm:"type:varchar(255);not null" validate:"required,min=1"`
 	IsActive     bool           `json:"is_active" gorm:"default:true"`
 	Description  string         `json:"description" gorm:"type:text"`
+	Type         string         `json:"type" gorm:"column:type;type:varchar(50);not null;default:'general'" validate:"required,min=1,max=50"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"`

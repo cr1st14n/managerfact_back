@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"managerfact/aplication/services"
 	"managerfact/internal/domain/models"
 	"strconv"
@@ -30,6 +31,7 @@ type CreateConnectionRequest struct {
 	Password     string `json:"password" validate:"required,min=1"`
 	IsActive     *bool  `json:"is_active,omitempty"`
 	Description  string `json:"description,omitempty"`
+	Type         string `json:"type" validate:"required,min=1,max=50"`
 }
 
 // UpdateConnectionRequest estructura para actualizar conexión
@@ -43,6 +45,7 @@ type UpdateConnectionRequest struct {
 	Password     string `json:"password" validate:"required,min=1"`
 	IsActive     *bool  `json:"is_active,omitempty"`
 	Description  string `json:"description,omitempty"`
+	Type         string `json:"type" validate:"required,min=1,max=50"`
 }
 
 // APIResponse estructura estándar de respuesta
@@ -74,6 +77,7 @@ func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 		Password:     req.Password,
 		IsActive:     true, // Por defecto activa
 		Description:  req.Description,
+		Type:         req.Type,
 	}
 
 	// Si se especifica is_active, usar ese valor
@@ -129,13 +133,16 @@ func (h *DbConnectionHandler) GetConnection(c *fiber.Ctx) error {
 func (h *DbConnectionHandler) GetAllConnections(c *fiber.Ctx) error {
 	// Verificar si solo se quieren las activas
 	activeOnly := c.Query("active_only") == "true"
+	tipo := c.Query("tipo")
 
 	var connections []models.DbConnection
 	var err error
 
 	if activeOnly {
-		connections, err = h.service.GetActiveConnections()
+		fmt.Printf("Obteniendo solo conexiones activas del tipo '%s'\n", tipo)
+		connections, err = h.service.GetActiveConnections(tipo)
 	} else {
+		fmt.Println("Obteniendo todas las conexiones")
 		connections, err = h.service.GetAllConnections()
 	}
 
@@ -227,6 +234,7 @@ func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 		Password:     req.Password,
 		IsActive:     true, // Por defecto activa
 		Description:  req.Description,
+		Type:         req.Type,
 	}
 
 	// Si se especifica is_active, usar ese valor
@@ -390,7 +398,7 @@ func (h *DbConnectionHandler) GetConnectionsStats(c *fiber.Ctx) error {
 		})
 	}
 
-	activeConnections, err := h.service.GetActiveConnections()
+	activeConnections, err := h.service.GetActiveConnections("facturador")
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(APIResponse{
 			Success: false,

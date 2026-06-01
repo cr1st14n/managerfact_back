@@ -16,6 +16,7 @@ type DbConnectionRepository interface {
 	GetByServerName(serverName string) (*models.DbConnection, error)
 	GetAll() ([]models.DbConnection, error)
 	GetAllActive() ([]models.DbConnection, error)
+	GetAllActiveByType(tipo string) ([]models.DbConnection, error)
 	Update(connection *models.DbConnection) error
 	Delete(id uint) error
 	SoftDelete(id uint) error
@@ -105,6 +106,17 @@ func (r *dbConnectionRepository) GetAllActive() ([]models.DbConnection, error) {
 	err := r.db.Where("is_active = ?", true).Order("server_name ASC").Find(&connections).Error
 	if err != nil {
 		return nil, fmt.Errorf("error obteniendo conexiones activas: %v", err)
+	}
+
+	return connections, nil
+}
+
+// GetAllActiveByType obtiene conexiones activas filtradas por tipo (case-insensitive)
+func (r *dbConnectionRepository) GetAllActiveByType(tipo string) ([]models.DbConnection, error) {
+	var connections []models.DbConnection
+	err := r.db.Where("is_active = ? AND LOWER(type) = LOWER(?)", true, tipo).Order("server_name ASC").Find(&connections).Error
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo conexiones activas por tipo: %v", err)
 	}
 
 	return connections, nil

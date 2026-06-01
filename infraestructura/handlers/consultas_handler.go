@@ -76,9 +76,42 @@ func (h *ConsultasHandler) Sucursales(c *fiber.Ctx) error {
 	// return nil
 }
 
+func (h *ConsultasHandler) BuscarDuas(c *fiber.Ctx) error {
+	idServer := c.Query("idServer")
+	if idServer == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "El campo idServer es requerido",
+		})
+	}
+
+	params := models.DuasBusquedaParams{
+		Nombre:      c.Query("nombre"),
+		Apellido:    c.Query("apellido"),
+		NumeroVuelo: c.Query("numero_vuelo"),
+		FechaDesde:  c.Query("fecha_desde"),
+		FechaHasta:  c.Query("fecha_hasta"),
+		Asiento:     c.Query("asiento"),
+		Ticket:      c.Query("ticket"),
+	}
+
+	data, err := h.ConsultasService.BuscarDuas(idServer, params)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error en consulta DUAS",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Resultados DUAS obtenidos",
+		"data":    data,
+	})
+}
+
 func (h *ConsultasHandler) RegisterRoutes(router fiber.Router) {
 	connections := router.Group("/consultar")
 
 	connections.Post("/", h.DataFacturas)
 	connections.Get("/sucursales", h.Sucursales)
+	connections.Get("/duas", h.BuscarDuas)
 }

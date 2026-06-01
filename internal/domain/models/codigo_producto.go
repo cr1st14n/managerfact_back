@@ -8,7 +8,7 @@ import (
 
 type Codigo_producto struct {
 	ID          uint           `json:"id" gorm:"primaryKey"`
-	Codigo      string         `json:"codigo"`
+	Codigo      string         `json:"codigo" gorm:"uniqueIndex"`
 	Descripcion string         `json:"descripcion"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
