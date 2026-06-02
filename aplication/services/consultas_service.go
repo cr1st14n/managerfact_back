@@ -5,7 +5,6 @@ import (
 	"managerfact/internal/domain/models"
 	"managerfact/internal/domain/repositories"
 	"strconv"
-	"strings"
 
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
@@ -172,7 +171,8 @@ SELECT
     t.FECHACREACION,
     t.USUARIOCREACION,
     t.URL_SIN,
-    t.FAC_DETALLEFACTURA
+    t.FAC_DETALLEFACTURA,
+	t.FAC_FECHAEMISION_FACTURA
 FROM TES_FACTURAITINERARIO t
 CROSS APPLY (
     SELECT
@@ -216,9 +216,6 @@ ORDER BY t.FAC_FECHAHORA_VUELO DESC
 
 	// Parsear el BCBP embebido en FAC_DETALLEFACTURA para poblar los campos
 	// que la tabla del front necesita (apellido, nombre, origen, etc.).
-	for i := range resultados {
-		parseBCBP(&resultados[i])
-	}
 
 	return &resultados, nil
 }
@@ -241,35 +238,6 @@ func sqlSubstring(s string, start, length int) string {
 
 // parseBCBP descompone FAC_DETALLEFACTURA (boarding pass BCBP) en los campos
 // del resultado, equivalente a las expresiones SUBSTRING/CHARINDEX del query.
-func parseBCBP(d *models.DuasResultado) {
-	detalle := d.FACDetalleFactura
-	posHash := strings.Index(detalle, "#") + 1 // CHARINDEX: 1-based, 0 si no existe
-	if posHash <= 3 {
-		return
-	}
-
-	// El campo "nombre del pasajero" del BCBP ocupa 20 chars (pos 3-22) y aquí
-	// viene como APELLIDO#NOMBRE. El '#' separa ambas partes dentro de ese bloque.
-	d.BCBPApellido = strings.TrimSpace(sqlSubstring(detalle, 3, posHash-3))
-	d.BCBPNombre = strings.TrimSpace(sqlSubstring(detalle, posHash+1, 22-posHash))
-
-	// A partir de la posición 23 el layout BCBP es FIJO (no depende del '#'):
-	// etkt(23) PNR(24-30) origen(31-33) destino(34-36) aerolinea(37-39)
-	// vuelo(40-44) diaJuliano(45-47) clase(48) asiento(49-52) secuencia(53-57)
-	d.BCBPOrigen = strings.TrimSpace(sqlSubstring(detalle, 31, 3))
-	d.BCBPDestino = strings.TrimSpace(sqlSubstring(detalle, 34, 3))
-	d.BCBPAerolinea = strings.TrimSpace(sqlSubstring(detalle, 37, 3))
-	d.BCBPVuelo = strings.TrimSpace(sqlSubstring(detalle, 40, 5))
-	d.BCBPDiaJuliano = strings.TrimSpace(sqlSubstring(detalle, 45, 3))
-	d.BCBPClase = strings.TrimSpace(sqlSubstring(detalle, 48, 1))
-	d.BCBPAsiento = strings.TrimSpace(sqlSubstring(detalle, 49, 4))
-	d.BCBPsecuencia = strings.TrimSpace(sqlSubstring(detalle, 53, 5))
-
-	if idx := strings.Index(detalle, "2A"); idx >= 0 {
-		// CHARINDEX('2A') = idx+1 (1-based); start = CHARINDEX + 2 = idx + 3
-		d.BCBPNroTicket = strings.TrimSpace(sqlSubstring(detalle, idx+3, 13))
-	}
-}
 
 func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales, error) {
 	idServer_parse, err := strconv.ParseInt(idServer, 10, 64)
