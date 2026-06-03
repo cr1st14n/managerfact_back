@@ -173,32 +173,28 @@ SELECT
     t.URL_SIN,
     t.FAC_DETALLEFACTURA,
 	t.FAC_FECHAEMISION_FACTURA
+
 FROM TES_FACTURAITINERARIO t
 CROSS APPLY (
     SELECT
-        CHARINDEX('#', t.FAC_DETALLEFACTURA)          AS posHash,
-        CHARINDEX('#', t.FAC_DETALLEFACTURA) + 21     AS posBase
+        UPPER(SUBSTRING(t.FAC_DETALLEFACTURA, 3, 20)) AS bloqueNombre
 ) p
 WHERE
-    p.posHash > 3
-    AND (@apellido IS NULL OR
-        SUBSTRING(t.FAC_DETALLEFACTURA, 3, p.posHash - 3) LIKE '%' + @apellido + '%'
-    )
-    AND (@nombre IS NULL OR
-        LTRIM(RTRIM(SUBSTRING(t.FAC_DETALLEFACTURA, p.posHash + 1, 20))) LIKE @nombre + '%'
-    )
-    AND (@vuelo IS NULL OR t.FAC_NROVUELO = @vuelo)
+    (@apellido IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@apellido) + '%')
+    AND (@nombre   IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@nombre)   + '%')
+    AND (@vuelo    IS NULL OR t.FAC_NROVUELO = @vuelo)
     AND (
         @fecha_desde IS NULL
         OR (@fecha_hasta IS NULL     AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) = @fecha_desde)
         OR (@fecha_hasta IS NOT NULL AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) BETWEEN @fecha_desde AND @fecha_hasta)
     )
     AND (@asiento IS NULL OR t.FAC_DETALLEFACTURA LIKE '%' + @asiento + '%')
-    AND (@ticket IS NULL OR
+    AND (@ticket  IS NULL OR
         CASE WHEN CHARINDEX('2A', t.FAC_DETALLEFACTURA) > 0
              THEN SUBSTRING(t.FAC_DETALLEFACTURA, CHARINDEX('2A', t.FAC_DETALLEFACTURA) + 2, 13)
              ELSE NULL END = @ticket
     )
+
 ORDER BY t.FAC_FECHAHORA_VUELO DESC
 `
 
