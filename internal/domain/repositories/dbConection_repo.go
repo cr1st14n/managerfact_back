@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"managerfact/internal/domain/models"
+	"strings"
 
 	// "github.com/yourproject/internal/models"
 	"gorm.io/gorm"
@@ -114,7 +115,7 @@ func (r *dbConnectionRepository) GetAllActive() ([]models.DbConnection, error) {
 // GetAllActiveByType obtiene conexiones activas filtradas por tipo (case-insensitive)
 func (r *dbConnectionRepository) GetAllActiveByType(tipo string) ([]models.DbConnection, error) {
 	var connections []models.DbConnection
-	err := r.db.Where("is_active = ? AND LOWER(type) = LOWER(?)", true, tipo).Order("server_name ASC").Find(&connections).Error
+	err := r.db.Where("is_active = ? AND LOWER(type) LIKE ?", true, "%"+strings.ToLower(tipo)+"%").Order("server_name ASC").Find(&connections).Error
 	if err != nil {
 		return nil, fmt.Errorf("error obteniendo conexiones activas por tipo: %v", err)
 	}
