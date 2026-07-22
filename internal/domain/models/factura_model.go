@@ -57,6 +57,78 @@ type FacturacionDetalles struct {
 	NroItem               int       `gorm:"column:nro_item"`
 }
 
+// SFEReporteFacturador representa una fila del reporte completo de facturación
+// (documento fiscal + sucursal + paquete + evento), tal como lo entrega la
+// consulta usada por el equipo para reportes de facturadores.
+type SFEReporteFacturador struct {
+	// Identificacion del documento
+	IDDocumentoFiscal     uint   `json:"id_documento_fiscal" gorm:"column:id_documento_fiscal"`
+	NumeroFactura         string `json:"numero_factura" gorm:"column:numero_factura"`
+	CodigoIntegracion     string `json:"codigo_integracion" gorm:"column:codigo_integracion"`
+	TipoFactura           string `json:"tipo_factura" gorm:"column:tipo_factura"`
+	TipoEmision           int    `json:"tipo_emision" gorm:"column:tipo_emision"`
+	EstadoDocumentoFiscal string `json:"estado_documento_fiscal" gorm:"column:estado_documento_fiscal"`
+	CodigosErroresSin     string `json:"codigos_errores_sin" gorm:"column:codigos_errores_sin"`
+	CodigoRespuestaSin    string `json:"codigo_respuesta_sin" gorm:"column:codigo_respuesta_sin"`
+	CodigoRecepcionSin    string `json:"codigo_recepcion_sin" gorm:"column:codigo_recepcion_sin"`
+
+	// Fechas de trazabilidad
+	FechaEmision     time.Time `json:"fecha_emision" gorm:"column:fecha_emision"`
+	FechaEnvio       time.Time `json:"fecha_envio" gorm:"column:fecha_envio"`
+	CreatedDate      time.Time `json:"created_date" gorm:"column:created_date"`
+	LastModifiedDate time.Time `json:"last_modified_date" gorm:"column:last_modified_date"`
+
+	// Identificadores fiscales
+	CUF  string `json:"cuf" gorm:"column:cuf"`
+	CUFD string `json:"cufd" gorm:"column:cufd"`
+	CUIS string `json:"cuis" gorm:"column:cuis"`
+
+	// Cliente
+	NombreRazonSocial       string `json:"nombre_razon_social" gorm:"column:nombre_razon_social"`
+	NumeroDocumento         string `json:"numero_documento" gorm:"column:numero_documento"`
+	CodigoCliente           string `json:"codigo_cliente" gorm:"column:codigo_cliente"`
+	CorreoElectronicoClient string `json:"correo_electronico_cliente" gorm:"column:correo_electronico_cliente"`
+
+	// Montos
+	MontoTotal       float64 `json:"monto_total" gorm:"column:monto_total"`
+	MontoTotalMoneda float64 `json:"monto_total_moneda" gorm:"column:monto_total_moneda"`
+
+	// Usuario y sucursal
+	UsuarioEmision    string `json:"usuario_emision" gorm:"column:usuario_emision"`
+	IDSucursal        uint   `json:"id_sucursal" gorm:"column:id_sucursal"`
+	CodigoSucursal    string `json:"codigo_sucursal" gorm:"column:codigo_sucursal"`
+	CodigoSucursalSin string `json:"codigo_sucursal_sin" gorm:"column:codigo_sucursal_sin"`
+	NombreSucursal    string `json:"nombre_sucursal" gorm:"column:nombre_sucursal"`
+	EstadoSucursal    string `json:"estado_sucursal" gorm:"column:estado_sucursal"`
+
+	// Paquete asociado (offline/contingencia)
+	IDPaquete             string    `json:"id_paquete" gorm:"column:id_paquete"`
+	EstadoPaquete         string    `json:"estado_paquete" gorm:"column:estado_paquete"`
+	CufdPaquete           string    `json:"cufd_paquete" gorm:"column:cufd_paquete"`
+	CuisPaquete           string    `json:"cuis_paquete" gorm:"column:cuis_paquete"`
+	CodigoRespuestaSinPaq string    `json:"codigo_respuesta_sin_paquete" gorm:"column:codigo_respuesta_sin_paquete"`
+	ErroresSinPaquete     string    `json:"errores_sin_paquete" gorm:"column:errores_sin_paquete"`
+	CantFacturasPaquete   int       `json:"cant_facturas_paquete" gorm:"column:cant_facturas_paquete"`
+	FechaEnvioPaquete     time.Time `json:"fecha_envio_paquete" gorm:"column:fecha_envio_paquete"`
+
+	// Evento significativo asociado (offline/contingencia)
+	IDEvento          string    `json:"id_evento" gorm:"column:id_evento"`
+	NombreEvento      string    `json:"nombre_evento" gorm:"column:nombre_evento"`
+	TipoEvento        string    `json:"tipo_evento" gorm:"column:tipo_evento"`
+	StateEvento       string    `json:"state_evento" gorm:"column:state_evento"`
+	EventoFechaInicio time.Time `json:"evento_fecha_inicio" gorm:"column:evento_fecha_inicio"`
+	EventoFechaFin    time.Time `json:"evento_fecha_fin" gorm:"column:evento_fecha_fin"`
+
+	// Detalle de productos/items
+	Cantidad          float64 `json:"cantidad" gorm:"column:cantidad"`
+	CodigoProductoSfe string  `json:"codigo_producto_sfe" gorm:"column:codigo_producto_sfe"`
+	Descripcion       string  `json:"descripcion" gorm:"column:descripcion"`
+	SubTotal          float64 `json:"sub_total" gorm:"column:sub_total"`
+
+	// Usuario que creo el registro
+	UsuarioCreador string `json:"usuario_creador" gorm:"column:usuario_creador"`
+}
+
 type SFE_factura struct {
 	NumeroFactura         string `gorm:"column:numero_factura" json:"numero_factura"`
 	NombreRazonSolcial    string `gorm:"column:nombre_razon_social" json:"nombre_razon_social"`

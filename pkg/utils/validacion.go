@@ -161,6 +161,19 @@ func ValidarCampoOpcional(errValidacion *[]string, campo string) string {
 	return strings.TrimSpace(campo)
 }
 
+// LimpiarListaOpcional recorta espacios y descarta entradas vacías de una
+// lista de valores opcional (p. ej. selección múltiple de códigos de producto).
+func LimpiarListaOpcional(campos []string) []string {
+	limpios := make([]string, 0, len(campos))
+	for _, campo := range campos {
+		campoLimpio := strings.TrimSpace(campo)
+		if campoLimpio != "" {
+			limpios = append(limpios, campoLimpio)
+		}
+	}
+	return limpios
+}
+
 // ValidarRangoEntero valida entero dentro de un rango
 func ValidarRangoEntero(errValidacion *[]string, campo, mensaje string, min, max int) int {
 	valor := ValidarEntero(errValidacion, campo, mensaje)

@@ -32,12 +32,23 @@ func (h *ConsultasHandler) DataFacturas(c *fiber.Ctx) error {
 	if dataIn.NumeroFactura != "" {
 		utils.ValidarEntero(&errValidacion, dataIn.NumeroFactura, "El campo numeroFactura es requerido")
 	}
-	dataIn.CodigoProducto = utils.ValidarCampoOpcional(&errValidacion, dataIn.CodigoProducto)
+	dataIn.CodigoProducto = utils.LimpiarListaOpcional(dataIn.CodigoProducto)
 	FechaDesde_parse := utils.ValidarFecha(&errValidacion, dataIn.FechaDesde, "El campo fechaDesde es requerido")
 	FechaHasta_parse := utils.ValidarFecha(&errValidacion, dataIn.FechaHasta, "El campo fechaHasta es requerido")
 	dataIn.Sucursal = utils.ValidarCampoOpcional(&errValidacion, dataIn.Sucursal)
 	dataIn.FechaDesde = FechaDesde_parse.Format("2006-01-02")
 	dataIn.FechaHasta = FechaHasta_parse.Format("2006-01-02")
+
+	dataIn.CodigoIntegracion = utils.ValidarCampoOpcional(&errValidacion, dataIn.CodigoIntegracion)
+	dataIn.CodigoCliente = utils.ValidarCampoOpcional(&errValidacion, dataIn.CodigoCliente)
+	dataIn.CUF = utils.ValidarCampoOpcional(&errValidacion, dataIn.CUF)
+	dataIn.EstadoDocumentoFiscal = utils.ValidarCampoOpcional(&errValidacion, dataIn.EstadoDocumentoFiscal)
+	if dataIn.CodigoSucursalSin != "" {
+		utils.ValidarEnteroOpcional(&errValidacion, dataIn.CodigoSucursalSin, "El campo codigoSucursalSin debe ser numérico")
+	}
+	if dataIn.TipoEmision != "" {
+		utils.ValidarEnteroOpcional(&errValidacion, dataIn.TipoEmision, "El campo tipoEmision debe ser numérico")
+	}
 
 	if len(errValidacion) > 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
