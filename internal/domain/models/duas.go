@@ -16,7 +16,7 @@ type DuasBusquedaParams struct {
 // DuasResultado representa un registro de la búsqueda DUAS
 type DuasResultadoCentral struct {
 	IDTESFacturaItinerario string    `json:"idtes_factura_itinerario" gorm:"column:IDTES_FACTURA_ITINERARIO"`
-	FACNroFactura          string    `json:"fac_nrofactura" gorm:"column:FAC_NROFACTURA"`
+	FACNroFactura          string    `json:"fac_nrofactura" gorm:"column:NUMEROFACTURA"`
 	FACNroVuelo            string    `json:"fac_nrovuelo" gorm:"column:FAC_NROVUELO"`
 	FACFechaHoraVuelo      time.Time `json:"fac_fechahora_vuelo" gorm:"column:FAC_FECHAHORA_VUELO"`
 	FACMonto               float64   `json:"fac_monto" gorm:"column:FAC_MONTO"`

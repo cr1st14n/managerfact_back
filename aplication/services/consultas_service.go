@@ -154,6 +154,40 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 		return s
 	}
 	var Query string
+	if Server.Type == "duas" {
+		Query = `
+		declare @etkt varchar(50) = ?
+		declare @nombre varchar(100) = ?
+		declare @apellido varchar(50)= ?
+		declare @vuelo varchar(10)=?
+		declare @asiento varchar(5)= ?
+		declare @origen varchar(3)= ?
+		declare @fechaA varchar(50)=?
+		declare @fechaB varchar(50)=?
+
+		 select tf.IDTES_FACTURA_ITINERARIO ,tf.FAC_NROVUELO ,tf.FAC_FECHAEMISION_FACTURA ,tf.FAC_DETALLEFACTURA ,tf.FAC_MONTO ,tf.FECHACREACION,tf.IDTES_FACTURAONLINE  ,tf.IDTES_FACTURAONLINE as "ID_DOCUMENTO" ,tf.FAC_NROFACTURA as "NUMEROFACTURA" ,tf.FAC_FECHAEMISION_FACTURA as "FECHA_EMISION"   ,tf.URL_SIN as "URL_SIN" 
+                from TES_FACTURAITINERARIO tf 
+                where (@nombre is null or tf.FAC_DETALLEFACTURA like '%' + @nombre + '%')
+                and (@etkt is null or tf.FAC_DETALLEFACTURA like '%2A' + @etkt + '%') 
+                and (@apellido is null or tf.FAC_DETALLEFACTURA like '%M1' + @apellido + '%')
+                and (@vuelo is null or tf.FAC_DETALLEFACTURA like '%' + @vuelo + '%')
+                and (@asiento is null or tf.FAC_DETALLEFACTURA like '%' + @asiento + '%')
+                and (@origen is null or tf.FAC_DETALLEFACTURA like '% ' + @origen + '%')
+                and tf.FAC_FECHAEMISION_FACTURA between @fechaA and @fechaB;
+		`
+		if err := db.Raw(Query,
+			toNull(params.Ticket),
+			toNull(params.Nombre),
+			toNull(params.Apellido),
+			toNull(params.NumeroVuelo),
+			toNull(params.Asiento),
+			nil, // @origen: sin parámetro de búsqueda por ahora
+			toNull(params.FechaDesde),
+			toNull(params.FechaHasta),
+		).Scan(&ResultadosCentral).Error; err != nil {
+			return nil, fmt.Errorf("error ejecutando consulta DUAS Central: %w", err)
+		}
+	}
 	if Server.Type == "duas_local" {
 		Query = `
 		declare @etkt varchar(50) = ?
@@ -186,67 +220,67 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 			toNull(params.FechaDesde),
 			toNull(params.FechaHasta),
 		).Scan(&ResultadosLocal).Error; err != nil {
-			return nil, fmt.Errorf("error ejecutando consulta DUAS: %w", err)
+			return nil, fmt.Errorf("error ejecutando consulta DUAS Local: %w", err)
 		}
 	}
-	if Server.Type == "duas_central" {
-		Query = `
-			DECLARE @nombre      NVARCHAR(50) = ?
-			DECLARE @apellido    NVARCHAR(50) = ?
-			DECLARE @vuelo       NVARCHAR(10) = ?
-			DECLARE @fecha_desde DATE         = ?
-			DECLARE @fecha_hasta DATE         = ?
-			DECLARE @asiento     NVARCHAR(10) = ?
-			DECLARE @ticket      NVARCHAR(13) = ?
+	// 	if Server.Type == "duas_central" {
+	// 		Query = `
+	// 			DECLARE @nombre      NVARCHAR(50) = ?
+	// 			DECLARE @apellido    NVARCHAR(50) = ?
+	// 			DECLARE @vuelo       NVARCHAR(10) = ?
+	// 			DECLARE @fecha_desde DATE         = ?
+	// 			DECLARE @fecha_hasta DATE         = ?
+	// 			DECLARE @asiento     NVARCHAR(10) = ?
+	// 			DECLARE @ticket      NVARCHAR(13) = ?
 
-			SELECT
-				t.IDTES_FACTURA_ITINERARIO,
-				t.FAC_NROFACTURA,
-				t.FAC_NROVUELO,
-				t.FAC_FECHAHORA_VUELO,
-				t.FAC_MONTO,
-				t.IDA_ESTADOFACTURA,
-				t.FECHACREACION,
-				t.USUARIOCREACION,
-				t.URL_SIN,
-				t.FAC_DETALLEFACTURA,
-				t.FAC_FECHAEMISION_FACTURA
+	// 			SELECT
+	// 				t.IDTES_FACTURA_ITINERARIO,
+	// 				t.FAC_NROFACTURA,
+	// 				t.FAC_NROVUELO,
+	// 				t.FAC_FECHAHORA_VUELO,
+	// 				t.FAC_MONTO,
+	// 				t.IDA_ESTADOFACTURA,
+	// 				t.FECHACREACION,
+	// 				t.USUARIOCREACION,
+	// 				t.URL_SIN,
+	// 				t.FAC_DETALLEFACTURA,
+	// 				t.FAC_FECHAEMISION_FACTURA
 
-			FROM TES_FACTURAITINERARIO t
-			CROSS APPLY (
-				SELECT
-					UPPER(SUBSTRING(t.FAC_DETALLEFACTURA, 3, 20)) AS bloqueNombre
-			) p
-			WHERE
-				(@apellido IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@apellido) + '%')
-				AND (@nombre   IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@nombre)   + '%')
-				AND (@vuelo    IS NULL OR t.FAC_NROVUELO = @vuelo)
-				AND (
-					@fecha_desde IS NULL
-					OR (@fecha_hasta IS NULL     AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) = @fecha_desde)
-					OR (@fecha_hasta IS NOT NULL AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) BETWEEN @fecha_desde AND @fecha_hasta)
-				)
-				AND (@asiento IS NULL OR t.FAC_DETALLEFACTURA LIKE '%' + @asiento + '%')
-				AND (@ticket  IS NULL OR
-					CASE WHEN CHARINDEX('2A', t.FAC_DETALLEFACTURA) > 0
-						THEN SUBSTRING(t.FAC_DETALLEFACTURA, CHARINDEX('2A', t.FAC_DETALLEFACTURA) + 2, 13)
-						ELSE NULL END = @ticket
-				)
+	// 			FROM TES_FACTURAITINERARIO t
+	// 			CROSS APPLY (
+	// 				SELECT
+	// 					UPPER(SUBSTRING(t.FAC_DETALLEFACTURA, 3, 20)) AS bloqueNombre
+	// 			) p
+	// 			WHERE
+	// 				(@apellido IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@apellido) + '%')
+	// 				AND (@nombre   IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@nombre)   + '%')
+	// 				AND (@vuelo    IS NULL OR t.FAC_NROVUELO = @vuelo)
+	// 				AND (
+	// 					@fecha_desde IS NULL
+	// 					OR (@fecha_hasta IS NULL     AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) = @fecha_desde)
+	// 					OR (@fecha_hasta IS NOT NULL AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) BETWEEN @fecha_desde AND @fecha_hasta)
+	// 				)
+	// 				AND (@asiento IS NULL OR t.FAC_DETALLEFACTURA LIKE '%' + @asiento + '%')
+	// 				AND (@ticket  IS NULL OR
+	// 					CASE WHEN CHARINDEX('2A', t.FAC_DETALLEFACTURA) > 0
+	// 						THEN SUBSTRING(t.FAC_DETALLEFACTURA, CHARINDEX('2A', t.FAC_DETALLEFACTURA) + 2, 13)
+	// 						ELSE NULL END = @ticket
+	// 				)
 
-			ORDER BY t.FAC_FECHAHORA_VUELO DESC
-`
-		if err := db.Raw(Query,
-			toNull(params.Nombre),
-			toNull(params.Apellido),
-			toNull(params.NumeroVuelo),
-			toNull(params.FechaDesde),
-			toNull(params.FechaHasta),
-			toNull(params.Asiento),
-			toNull(params.Ticket),
-		).Scan(&ResultadosCentral).Error; err != nil {
-			return nil, fmt.Errorf("error ejecutando consulta DUAS: %w", err)
-		}
-	}
+	// 			ORDER BY t.FAC_FECHAHORA_VUELO DESC
+	// `
+	// 		if err := db.Raw(Query,
+	// 			toNull(params.Nombre),
+	// 			toNull(params.Apellido),
+	// 			toNull(params.NumeroVuelo),
+	// 			toNull(params.FechaDesde),
+	// 			toNull(params.FechaHasta),
+	// 			toNull(params.Asiento),
+	// 			toNull(params.Ticket),
+	// 		).Scan(&ResultadosCentral).Error; err != nil {
+	// 			return nil, fmt.Errorf("error ejecutando consulta DUAS Central: %w", err)
+	// 		}
+	// 	}
 	Resultados.ResultadosCentral = ResultadosCentral
 	Resultados.ResultadosLocal = ResultadosLocal
 
