@@ -83,6 +83,11 @@ func AutoMigrate(db *gorm.DB) error {
 	err := db.AutoMigrate(
 		&models.DbConnection{},
 		&models.Codigo_producto{},
+		&models.Regional{},
+		&models.SucursalCatalogo{},
+		&models.Usuario{},
+		&models.UsuarioAccesoRegional{},
+		&models.UsuarioAccesoSucursal{},
 	)
 
 	if err != nil {
@@ -142,12 +147,81 @@ func SeedDatabase(db *gorm.DB) error {
 	return nil
 }
 
+// SeedRegionalesYSucursales siembra el catálogo de regionales y sucursales
+// (transcrito de doc/sucursales.md) si todavía no existen datos. Pendiente
+// de validar contra SFE_SUCURSAL en producción, tal como advierte el propio
+// documento de origen.
+func SeedRegionalesYSucursales(db *gorm.DB) error {
+	var count int64
+	if err := db.Model(&models.Regional{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("error verificando regionales existentes: %v", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	log.Println("No se encontraron regionales, sembrando catálogo desde doc/sucursales.md...")
+
+	type sucursalSeed struct {
+		Codigo int
+		Nombre string
+	}
+
+	sucursalesPorRegional := map[string][]sucursalSeed{
+		"La Paz": {
+			{4, "El Alto"}, {5, "Oruro"}, {25, "Cobija"}, {28, "Uyuni"},
+			{35, "Rurrenabaque"}, {36, "Reyes"}, {24, "San Borja"},
+			{6, "Copacabana"}, {38, "Apolo"},
+		},
+		"Cochabamba": {
+			{3, "Cochabamba"}, {31, "Chimoré"}, {33, "Tarija"}, {26, "Potosí"},
+			{37, "Alcantarí"}, {30, "Yacuiba"}, {8, "Monteagudo"},
+			{27, "Villamontes"}, {7, "Bermejo"},
+		},
+		"Santa Cruz": {
+			{29, "Viru Viru"}, {2, "Trompillo"}, {17, "San Javier"}, {11, "Concepción"},
+			{14, "San Ignacio de Velasco"}, {19, "Camiri"}, {10, "Roboré"},
+			{13, "Puerto Suárez"}, {12, "Vallegrande"}, {18, "Ascensión de Guarayos"},
+			{16, "San José Chiquitos"}, {9, "San Matías"},
+		},
+		// San Ramón (Beni) no tiene código SIN visible en la tarjeta fuente,
+		// así que queda fuera del catálogo hasta confirmarlo.
+		"Beni": {
+			{1, "Trinidad"}, {22, "Santa Ana de Yacuma"}, {23, "San Ignacio de Moxos"},
+			{21, "Magdalena"}, {34, "Riberalta"}, {32, "Santa Rosa"}, {20, "Guarayamerín"},
+		},
+	}
+
+	ordenRegionales := []string{"La Paz", "Cochabamba", "Santa Cruz", "Beni"}
+
+	for _, nombreRegional := range ordenRegionales {
+		regional := models.Regional{Nombre: nombreRegional}
+		if err := db.Create(&regional).Error; err != nil {
+			return fmt.Errorf("error creando regional %s: %v", nombreRegional, err)
+		}
+		for _, s := range sucursalesPorRegional[nombreRegional] {
+			sucursal := models.SucursalCatalogo{
+				CodigoSucursalSin: s.Codigo,
+				Nombre:            s.Nombre,
+				RegionalID:        regional.ID,
+			}
+			if err := db.Create(&sucursal).Error; err != nil {
+				return fmt.Errorf("error creando sucursal %s: %v", s.Nombre, err)
+			}
+		}
+	}
+
+	log.Println("Catálogo de regionales y sucursales sembrado exitosamente")
+	return nil
+}
+
 // SetupRoutes configura todas las rutas de la API
 func SetupRoutes(
 	app *fiber.App,
 	dbConnectionHandler *handlers.DbConnectionHandler,
 	consultasHandler *handlers.ConsultasHandler,
 	codigoProductoHandler *handlers.CodigoProductoHandler,
+	usuarioHandler *handlers.UsuarioHandler,
 ) {
 	// Middleware global
 	app.Use(logger.New(logger.Config{
@@ -191,6 +265,8 @@ func SetupRoutes(
 	consultasHandler.RegisterRoutes(api)
 	// Registrar rutas de codigo producto
 	codigoProductoHandler.RegisterRoutes(api)
+	// Registrar rutas de usuarios/regionales/catálogo de sucursales
+	usuarioHandler.RegisterRoutes(api)
 }
 
 func main() {
@@ -211,6 +287,9 @@ func main() {
 	if err := SeedDatabase(db); err != nil {
 		log.Printf("Advertencia en seed de datos: %v", err)
 	}
+	if err := SeedRegionalesYSucursales(db); err != nil {
+		log.Printf("Advertencia en seed de regionales/sucursales: %v", err)
+	}
 
 	// Inicializar dependencias (Dependency Injection)
 	dbConnectionRepo := repositories.NewDbConnectionRepository(db)
@@ -226,6 +305,11 @@ func main() {
 	codigoProductoRepo := repositories.NewCodigoProductoRepoRepo(db)
 	codigoProductoService := services.NewCodigoProductoService(codigoProductoRepo)
 	codigoProductoHandler := handlers.NewCodigoProductoHandler(codigoProductoService)
+
+	// usuarios
+	usuarioRepo := repositories.NewUsuarioRepository(db)
+	usuarioService := services.NewUsuarioService(usuarioRepo)
+	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
 	// Configurar Fiber
 	app := fiber.New(fiber.Config{
 		AppName:      "Invoice System API v1.0.0",
@@ -245,7 +329,7 @@ func main() {
 	})
 
 	// Configurar rutas
-	SetupRoutes(app, dbConnectionHandler, consultasHandler, codigoProductoHandler)
+	SetupRoutes(app, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler)
 
 	// Iniciar servidor
 	port := ":" + config.ServerPort
