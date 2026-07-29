@@ -88,6 +88,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Usuario{},
 		&models.UsuarioAccesoRegional{},
 		&models.UsuarioAccesoSucursal{},
+		&models.SucursalFacturador{},
+		&models.FacturaPrevalorada{},
+		&models.FacturaAnulacion{},
 	)
 
 	if err != nil {
@@ -222,6 +225,9 @@ func SetupRoutes(
 	consultasHandler *handlers.ConsultasHandler,
 	codigoProductoHandler *handlers.CodigoProductoHandler,
 	usuarioHandler *handlers.UsuarioHandler,
+	sucursalFacturadorHandler *handlers.SucursalFacturadorHandler,
+	facturaPrevaloradaHandler *handlers.FacturaPrevaloradaHandler,
+	facturaAnulacionHandler *handlers.FacturaAnulacionHandler,
 ) {
 	// Middleware global
 	app.Use(logger.New(logger.Config{
@@ -267,6 +273,12 @@ func SetupRoutes(
 	codigoProductoHandler.RegisterRoutes(api)
 	// Registrar rutas de usuarios/regionales/catálogo de sucursales
 	usuarioHandler.RegisterRoutes(api)
+	// Registrar rutas de sucursales facturador (FacturaClic)
+	sucursalFacturadorHandler.RegisterRoutes(api)
+	// Registrar rutas de facturas prevaloradas (boletos)
+	facturaPrevaloradaHandler.RegisterRoutes(api)
+	// Registrar rutas de facturas de anulación
+	facturaAnulacionHandler.RegisterRoutes(api)
 }
 
 func main() {
@@ -310,6 +322,21 @@ func main() {
 	usuarioRepo := repositories.NewUsuarioRepository(db)
 	usuarioService := services.NewUsuarioService(usuarioRepo)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
+
+	// sucursales facturador (FacturaClic)
+	sucursalFacturadorRepo := repositories.NewSucursalFacturadorRepository(db)
+	sucursalFacturadorService := services.NewSucursalFacturadorService(sucursalFacturadorRepo)
+	sucursalFacturadorHandler := handlers.NewSucursalFacturadorHandler(sucursalFacturadorService)
+
+	// facturas prevaloradas (boletos)
+	facturaPrevaloradaRepo := repositories.NewFacturaPrevaloradaRepository(db)
+	facturaPrevaloradaService := services.NewFacturaPrevaloradaService(facturaPrevaloradaRepo, sucursalFacturadorRepo)
+	facturaPrevaloradaHandler := handlers.NewFacturaPrevaloradaHandler(facturaPrevaloradaService)
+
+	// facturas de anulación
+	facturaAnulacionRepo := repositories.NewFacturaAnulacionRepository(db)
+	facturaAnulacionService := services.NewFacturaAnulacionService(facturaAnulacionRepo, sucursalFacturadorRepo)
+	facturaAnulacionHandler := handlers.NewFacturaAnulacionHandler(facturaAnulacionService)
 	// Configurar Fiber
 	app := fiber.New(fiber.Config{
 		AppName:      "Invoice System API v1.0.0",
@@ -329,7 +356,7 @@ func main() {
 	})
 
 	// Configurar rutas
-	SetupRoutes(app, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler)
+	SetupRoutes(app, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler)
 
 	// Iniciar servidor
 	port := ":" + config.ServerPort

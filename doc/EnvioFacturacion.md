@@ -50,51 +50,47 @@ Tabla nueva e independiente del catálogo maestro `sucursales_catalogo` (que ya 
 
 ---
 
-## 2. Registro de factura prevalorada
+## 2. Registro de boletos y facturación prevalorada
 
-Siempre trae **un solo ítem** (uso de derecho aeroportuario), así que se modela plano en una sola tabla, sin tabla hija de detalle.
+Dos etapas independientes:
+1. **Importación**: se cargan los datos base de cada boleto (Excel/lista), sin tocar todavía nada del formato que espera el facturador.
+2. **Facturación**: el sistema arma el JSON (`datosGenerales` + `documentoFiscal`) combinando el boleto importado + la configuración de la sucursal facturador + una serie de valores fijos, lo envía al facturador, y guarda la respuesta (estado + detalle del evento).
+
+Sigue siendo **un solo ítem** por factura (uso de derecho aeroportuario), modelado plano en una sola tabla, sin tabla hija de detalle.
+
+### Etapa 1: Importación
+
+Antes de importar el archivo se selecciona **una sola vez, para todo el lote**: a qué `sucursal_facturador` se enviarán estas facturas. Esa selección queda fija para todas las filas del archivo — `sucursal_facturador_id` no es una columna del Excel.
 
 ### Modelo: `facturas_prevaloradas`
 
-Cabecera (mapea `datosGenerales` + `documentoFiscal.cabecera` del payload de FacturaClic):
-
 | Campo | Origen |
 |---|---|
-| `sucursal_facturador_id` | FK a `sucursales_facturador` |
-| `codigo_integracion` | generado (UUID), único — idempotency key |
+| `sucursal_facturador_id` | seleccionado antes de importar, fijo para todo el lote |
 | `lote_id` | UUID del lote de importación (ver sección 3) |
-| `codigo_cliente`, `celular_cliente`, `email_cliente` | Excel / defaults |
-| `tipo_documento_fiscal`, `tipo_documento_sector`, `codigo_excepcion`, `tipo_emision` | defaults fijos |
-| `fecha_emision`, `fecha_emision_factura` | Excel |
-| `nombre_razon_social`, `tipo_documento_identidad`, `numero_documento`, `complemento` | defaults fijos |
-| `metodo_pago`, `codigo_moneda` | defaults fijos |
-| `tipo_cambio`, `monto_total_moneda`, `monto_total`, `monto_total_sujeto_iva` | Excel / calculado |
-| `usuario` | quién importa / valor fijo (a confirmar) |
-
-Ítem (aplanado, mapea `documentoFiscal.detalle[0]`):
-
-| Campo | Origen |
-|---|---|
+| `codigo_integracion` | generado (UUID), único — idempotency key |
+| `tipo` | fijo `"FACTURA_PREVALORADA"` (no viene del Excel) |
+| `observacion` | motivo de carga del lote, ingresado antes de importar, fijo para todo el lote |
+| `detalle` | Excel — descripción del boleto/ítem |
 | `codigo_producto` | Excel |
-| `descripcion_item` | Excel |
-| `cantidad` | default `1` |
-| `precio_unitario`, `subtotal` | = `monto` del Excel |
-| `monto_descuento_detalle` | default `null` |
-| `codigo_detalle_transaccion` | default `1` |
-| `codigo_unidad_medida` | default `"58"` |
+| `costo_dua_dolares` | Excel — costo del DUA, en dólares |
+| `fecha_compra_boleto` | Excel — fecha de compra del boleto aéreo |
+| `tipo_cambio` | Excel — tc vigente **a la fecha de `fecha_compra_boleto`**. Se guarda tal cual, sin recalcular |
+| `fecha_emision` | Excel |
 
-Seguimiento de envío:
+Seguimiento de envío (se completa en la etapa 2):
 
 | Campo | Notas |
 |---|---|
 | `estado` | `pendiente` → `enviado` → `aceptado` / `rechazado` / `error` |
-| `codigo_respuesta`, `mensaje_respuesta` | de la respuesta de FacturaClic (formato exacto: pendiente de definir) |
+| `codigo_respuesta`, `mensaje_respuesta` | detalle del evento devuelto por el facturador (formato exacto: pendiente de definir) |
 | `fecha_envio`, `fecha_respuesta` | |
 | `intentos_consulta` | contador para el polling de estado |
 
-`tipo` (string, default `"prevalorada"`) para acomodar otros tipos de factura que el doc original menciona a futuro, sin construir hoy una abstracción genérica.
+### Etapa 2: Facturación (armado del JSON)
 
-### Defaults fijos confirmados para "derecho aeroportuario"
+Los siguientes valores **no se guardan como columnas**: son constantes que el `FacturadorClient` inyecta directamente al armar el JSON de envío (`recibir-sincrono`), combinándolas con los campos de la etapa 1 y con los datos de `sucursales_facturador` (nit, código sucursal SIN, punto de venta, moneda BOB):
+
 ```
 codigoCliente = "N/A"
 tipoDocumentoIdentidad = "5"
@@ -114,8 +110,15 @@ codigoDetalleTransaccion = 1
 montoDescuentoDetalle = null
 ```
 
+Mapeo del boleto importado al payload del facturador:
+- `descripcion` (detalle del ítem) = `detalle`
+- `codigoProducto` = `codigo_producto`
+- `precioUnitario` / `subtotal` / `montoTotal` / `montoTotalSujetoIva` = `costo_dua_dolares`
+- `tipoCambio` = `tipo_cambio`
+- `fechaEmision` = `fecha_emision`
+
 ### Pendiente de confirmar (no bloquea el resto del diseño)
-- `montoTotalMoneda`: ¿= `monto / tipoCambio`?
+- `montoTotalMoneda`: ¿= `costo_dua_dolares / tipo_cambio`?
 - `fechaEmisionFactura`: ¿= `fechaEmision`?
 - `emailCliente`: ¿vacío o algún valor por defecto?
 - `usuario`: ¿el usuario que importa el Excel, o un valor fijo de sistema?
@@ -125,10 +128,12 @@ montoDescuentoDetalle = null
 ## 3. Importación desde Excel
 
 **Endpoint**: `POST /api/v1/facturas-prevaloradas/importar-excel`
-- Multipart: archivo `.xlsx` + `sucursal_facturador_id` (una sola sucursal por archivo).
+- Multipart: archivo `.xlsx` + `sucursal_facturador_id` + `observacion` (una sola sucursal y observación por archivo, fijas para todo el lote).
 - Librería: `github.com/xuri/excelize/v2` (agregar a `go.mod`).
 
-**Columnas esperadas** (por nombre de encabezado): `fecha_emision`, `monto`, `tipo_cambio`, `descripcion`, `codigo_producto`.
+**Columnas esperadas** (por nombre de encabezado): `detalle`, `costo_dua_dolares`, `fecha_emision`, `fecha_compra_boleto`, `tipo_cambio` (tc a la fecha de `fecha_compra_boleto`), `codigo_producto`.
+
+`tipo` **no** es columna del Excel: se fija en `"FACTURA_PREVALORADA"` al guardar cada fila, ya que este importador solo maneja prevaloradas por ahora.
 
 **Por fila**:
 1. Validar tipos y campos requeridos. Fila inválida → no se guarda, se reporta el motivo; no aborta el archivo completo.
@@ -139,12 +144,49 @@ montoDescuentoDetalle = null
 **Respuesta**: `lote_id`, total de filas, válidas, con error (detalle fila + motivo).
 
 ### Endpoints de seguimiento
-- `GET /api/v1/facturas-prevaloradas?estado=&lote_id=`
+- `GET /api/v1/facturas-prevaloradas/plantilla` — descarga el `.xlsx` de ejemplo con las columnas esperadas.
+- `GET /api/v1/facturas-prevaloradas/lotes` — registro de lotes: sucursal facturador, tipo, total y desglose por estado de cada lote importado.
+- `GET /api/v1/facturas-prevaloradas?estado=&lote_id=` — detalle de un lote (o de todas las facturas, filtrando por estado).
 - `GET /api/v1/facturas-prevaloradas/:id`
 
 ---
 
-## 4. Envío automático
+## 4. Anulación de facturas
+
+Segundo tipo de lote (aparte de la prevalorada), con su propia plantilla de Excel. No describe un ítem nuevo a facturar — solo referencia una factura ya emitida (por CUF + código de integración) y el motivo de anulación — por eso vive en su propia tabla (`facturas_anulacion`) en vez de columnas nullable sobre `facturas_prevaloradas`.
+
+### Modelo: `facturas_anulacion`
+
+| Campo | Origen |
+|---|---|
+| `sucursal_facturador_id` | seleccionado antes de importar, fijo para todo el lote |
+| `lote_id` | UUID del lote de importación |
+| `observacion` | motivo de carga del lote, fijo para todo el lote (igual que en prevaloradas) |
+| `codigo_integracion` | **Excel** — a diferencia de la prevalorada, acá NO se genera: es el código de integración de la factura original que se quiere anular |
+| `cuf` | Excel — CUF de la factura original a anular |
+| `codigo_motivo` | Excel — código de motivo de anulación |
+
+Seguimiento de envío (mismos campos que `facturas_prevaloradas`): `estado`, `codigo_respuesta`, `mensaje_respuesta`, `fecha_envio`, `fecha_respuesta`, `intentos_consulta`.
+
+### Importación desde Excel
+
+**Endpoint**: `POST /api/v1/facturas-anulacion/importar-excel`
+- Multipart: archivo `.xlsx` + `sucursal_facturador_id` + `observacion` (una sola sucursal y observación por archivo, fijas para todo el lote).
+- **Columnas esperadas**: `cuf`, `codigo_motivo`, `codigo_integracion` (de la factura original a anular).
+- Mismas reglas de importación por fila que la prevalorada: fila inválida → no se guarda, se reporta el motivo; no aborta el archivo completo.
+
+### Endpoints de seguimiento
+- `GET /api/v1/facturas-anulacion/plantilla` — descarga el `.xlsx` de ejemplo con las columnas esperadas.
+- `GET /api/v1/facturas-anulacion/lotes` — registro de lotes: sucursal facturador, observación, total y desglose por estado de cada lote importado.
+- `GET /api/v1/facturas-anulacion?estado=&lote_id=` — detalle de un lote (o de todas las facturas, filtrando por estado).
+- `GET /api/v1/facturas-anulacion/:id`
+
+### Pendiente de confirmar (no bloquea el resto del diseño)
+- Forma exacta del payload de envío al facturador para anulación (endpoint distinto de `recibir-sincrono`, probablemente algo como `anular-sincrono` — a confirmar contra la documentación de FacturaClic).
+
+---
+
+## 5. Envío automático
 
 - `FacturadorClient`: cliente HTTP que arma el JSON anidado (`datosGenerales` / `documentoFiscal`) a partir de la sucursal + la factura, y llama:
   - `POST {url_link_facturador}/clic-core/facturas/recibir-sincrono`
@@ -222,3 +264,127 @@ Ejemplo de payload de envío (`recibir-sincrono`), factura real de un solo ítem
     }
 }
 ```
+------------------------------------------------------- PRUEBA JSON testeado
+para envio de prevalorada clic-core/facturas/recibir-sincrono
+para modificar la fecha de emision seria asi
+$formattedDateTime = preg_replace('/(\.\d{3})\d+/', '$1', Carbon::now('America/La_Paz')->subMinute()->format('Y-m-d\TH:i:s.uP'));
+"tipoEmision" => 3,
+"fechaEmision" => $formattedDateTime,
+
+
+
+
+{
+    "datosGenerales": {
+        "nitEmisor": "419945029",
+        "sucursalEmisor": 0,
+        "puntoVentaEmisor": "",
+        "codigoIntegracion": "KKKKKKKK",
+        "codigoCliente": "N/A",
+        "celularCliente": null,
+        "emailCliente": null,
+        "atributosAdicionalesGeneral": []
+    },
+    "documentoFiscal": {
+        "cabecera": {
+            "tipoDocumentoFiscal": 1,
+            "tipoDocumentoSector": "23",
+            "codigoExcepcion": null,
+            "tipoEmision": 1,
+            "fechaEmision": null,
+            "nombreRazonSocial": "S/N",
+            "tipoDocumentoIdentidad": "NIT",
+            "numeroDocumento": "0",
+            "complemento": null,
+            "fechaEmisionFactura": null,
+            "metodoPago": "1",
+            "codigoMoneda": "BOB",
+            "tipoCambio": 1,
+            "montoTotalMoneda": 10,
+            "montoTotal": 10,
+            "montoTotalSujetoIva": 10,
+            "usuario": "Client-Postman"
+        },
+        "detalle": [
+            {
+                "codigoProducto": "99101",
+                "descripcion": "PIZARRA BITUMINOSA O DE ACEITE Y ARENAS DE ALQUITRÁN",
+                "cantidad": 1,
+                "precioUnitario": 10,
+                "subtotal": 10,
+                "montoDescuentoDetalle": null,
+                "codigoDetalleTransaccion": 1,
+                "codigoUnidadMedida": "58"
+            }
+        ]
+    }
+}
+respuesta succes
+{
+    "codigo": 200,
+    "respuesta": "OK",
+    "mensaje": "Documento fiscal procesado de manera correcta",
+    "urlDocumento": "https://facturacion.lp.naabol.gob.bo:8443/clic-portal/df/5239ddebb98ca5ff80744b3be577a064",
+    "idDocumento": 7737942,
+    "tipoEmision": 1,
+    "tipoEmisionDescripcion": "ONLINE",
+    "cuf": "1CBBDAA372E42FF1FE90B7CD09E4B0B4A88660F66512F40053660BF74",
+    "cufd": "BQXxDdMONcEFBN00FFRjBCNUM5MUU=Qj4lVUtVZEhhVUFMyMjRFNTcxQ0ZGQ",
+    "cuis": "EC9202A9",
+    "numeroFactura": 17735,
+    "fechaEmision": "2026-07-29T01:17:07.584-04:00",
+    "estadoDocumentoFiscal": "VERIFICADO",
+    "codigoRecepcionSin": "beabe2d6-8b0c-11f1-9c04-abe440964172",
+    "codigoIntegracion": "KKKKKKKK",
+    "urlSin": "https://siat.impuestos.gob.bo/consulta/QR?nit=419945029&cuf=1CBBDAA372E42FF1FE90B7CD09E4B0B4A88660F66512F40053660BF74&numero=17735&t=2",
+    "leyenda": "Ley N° 453: El proveedor de servicios debe habilitar medios e instrumentos para efectuar consultas y reclamaciones."
+}
+si falla algo
+{
+    "codigo": 400,
+    "respuesta": "NOK",
+    "mensaje": "El campo 'tipoDocumentoIdentidad' debe ser: 5",
+    "urlDocumento": null,
+    "idDocumento": 0,
+    "tipoEmision": 0,
+    "tipoEmisionDescripcion": null,
+    "cuf": null,
+    "cufd": null,
+    "cuis": null,
+    "numeroFactura": null,
+    "fechaEmision": null,
+    "estadoDocumentoFiscal": null,
+    "codigoRecepcionSin": null,
+    "codigoIntegracion": "KKKKKKKK",
+    "urlSin": null,
+    "leyenda": null
+}
+---
+para anular  clic-core/facturas/anular
+{
+    "datosGenerales": {
+        "nitEmisor": 419945029,
+        "sucursalEmisor": "0",
+        "puntoVentaEmisor": "",
+        "canalFacturacion": "core"
+    },
+    "documentoFiscal": {
+        "codigoIntegracion": "KKKKKKKK2",
+        "cuf": "1CBBDAA372E42FF1FE90B7CD09E4B0B4A88660F66512F40053660BF74",
+        "codigoMotivo": "1"
+    }
+}
+respuesta todo OK
+{
+    "codigo": 200,
+    "respuesta": "OK",
+    "mensaje": "Documento Fiscal con CUF:1CBBDAA372E42FF1FE90B7CD09E4B0B4A88660F66512F40053660BF74 ANULADO de manera exitosa.",
+    "codigoIntegracion": "KKKKKKKK"
+}
+si falla algo
+{
+    "codigo": 400,
+    "respuesta": "NOK",
+    "mensaje": "El documento fiscal con CUF[1CBBDAA372E42FF1FE90B7CD09E4B0B4A88660F66512F40053660BF74] ya fue ANULADO",
+    "codigoIntegracion": "KKKKKKKK2"
+}
