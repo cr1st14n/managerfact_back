@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"managerfact/aplication/services"
+	"managerfact/internal/domain/models"
 	"managerfact/pkg/utils"
 	"strconv"
 
@@ -21,6 +22,7 @@ type usuarioRequest struct {
 	CI            string `json:"ci"`
 	Cargo         string `json:"cargo"`
 	CodigoUsuario string `json:"codigo_usuario"`
+	Rol           string `json:"rol"`
 	RegionalID    *uint  `json:"regional_id"`
 	SucursalID    *uint  `json:"sucursal_id"`
 	IsActive      *bool  `json:"is_active,omitempty"`
@@ -32,6 +34,9 @@ func (h *UsuarioHandler) validar(req *usuarioRequest) []string {
 	req.CI = utils.ValidarCampoRequerido(&errValidacion, req.CI, "El campo ci es requerido")
 	req.CodigoUsuario = utils.ValidarCampoRequerido(&errValidacion, req.CodigoUsuario, "El campo codigo_usuario es requerido")
 	req.Cargo = utils.ValidarCampoOpcional(&errValidacion, req.Cargo)
+	if req.Rol != models.RolAdmin && req.Rol != models.RolOperador {
+		errValidacion = append(errValidacion, "El campo rol debe ser 'admin' u 'operador'")
+	}
 	return errValidacion
 }
 
@@ -50,6 +55,7 @@ func (h *UsuarioHandler) Create(c *fiber.Ctx) error {
 		CI:            req.CI,
 		Cargo:         req.Cargo,
 		CodigoUsuario: req.CodigoUsuario,
+		Rol:           req.Rol,
 		RegionalID:    req.RegionalID,
 		SucursalID:    req.SucursalID,
 	})
@@ -89,6 +95,7 @@ func (h *UsuarioHandler) Update(c *fiber.Ctx) error {
 		CI:            req.CI,
 		Cargo:         req.Cargo,
 		CodigoUsuario: req.CodigoUsuario,
+		Rol:           req.Rol,
 		RegionalID:    req.RegionalID,
 		SucursalID:    req.SucursalID,
 		IsActive:      isActive,
@@ -232,9 +239,12 @@ func (h *UsuarioHandler) GetSucursalesCatalogo(c *fiber.Ctx) error {
 }
 
 // RegisterRoutes registra las rutas de usuarios y los catálogos de
-// regionales/sucursales que usa el formulario de accesos.
-func (h *UsuarioHandler) RegisterRoutes(router fiber.Router) {
-	usuarios := router.Group("/usuarios")
+// regionales/sucursales que usa el formulario de accesos, todas detrás de
+// requireAdmin (los operadores no pueden ver ni operar este módulo). Los
+// prefijos "/usuarios", "/regionales" y "/sucursales-catalogo" scopean el
+// middleware solo a estas rutas, no a las demás del grupo protegido.
+func (h *UsuarioHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
+	usuarios := router.Group("/usuarios", requireAdmin)
 	usuarios.Post("/", h.Create)
 	usuarios.Get("/", h.GetAll)
 	usuarios.Get("/:id", h.GetByID)
@@ -245,6 +255,6 @@ func (h *UsuarioHandler) RegisterRoutes(router fiber.Router) {
 	usuarios.Put("/:id/accesos", h.SetAccesos)
 	usuarios.Get("/:id/sucursales-permitidas", h.GetSucursalesPermitidas)
 
-	router.Get("/regionales", h.GetRegionales)
-	router.Get("/sucursales-catalogo", h.GetSucursalesCatalogo)
+	router.Get("/regionales", requireAdmin, h.GetRegionales)
+	router.Get("/sucursales-catalogo", requireAdmin, h.GetSucursalesCatalogo)
 }

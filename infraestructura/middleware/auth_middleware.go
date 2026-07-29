@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"managerfact/aplication/services"
 	"managerfact/pkg/utils"
 	"strings"
 
@@ -28,6 +29,28 @@ func RequireAuth() fiber.Handler {
 		}
 
 		c.Locals(UsuarioIDLocal, claims.UsuarioID)
+		return c.Next()
+	}
+}
+
+// RequireAdmin exige que el usuario autenticado (usuario_id ya puesto en
+// Locals por RequireAuth, que debe ir encadenado antes) tenga rol "admin".
+// Usado para bloquear los módulos de Usuarios y Sucursales Facturador a los
+// operadores.
+func RequireAdmin(usuarioService *services.UsuarioService) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		usuarioID, ok := c.Locals(UsuarioIDLocal).(uint)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+		}
+
+		esAdmin, err := usuarioService.EsAdmin(usuarioID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error verificando permisos", "error": err.Error()})
+		}
+		if !esAdmin {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "No tienes permiso para acceder a este módulo"})
+		}
 		return c.Next()
 	}
 }

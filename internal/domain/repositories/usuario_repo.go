@@ -266,6 +266,17 @@ func (r *UsuarioRepository) SucursalesPermitidas(usuarioID uint) ([]models.Sucur
 	return sucursales, nil
 }
 
+// EsAdmin indica si el usuario tiene rol "admin" — usado por
+// middleware.RequireAdmin para bloquear los módulos de Usuarios y
+// Sucursales Facturador a los operadores.
+func (r *UsuarioRepository) EsAdmin(usuarioID uint) (bool, error) {
+	usuario, err := r.GetByID(usuarioID)
+	if err != nil {
+		return false, err
+	}
+	return usuario.Rol == models.RolAdmin, nil
+}
+
 // TieneAccesoTotal indica si el usuario tiene acceso nacional (bypass de
 // sucursales_permitidas_codigos).
 func (r *UsuarioRepository) TieneAccesoTotal(usuarioID uint) (bool, error) {

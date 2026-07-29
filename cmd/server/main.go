@@ -223,6 +223,7 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 func SetupRoutes(
 	app *fiber.App,
 	authHandler *handlers.AuthHandler,
+	usuarioService *services.UsuarioService,
 	dbConnectionHandler *handlers.DbConnectionHandler,
 	consultasHandler *handlers.ConsultasHandler,
 	codigoProductoHandler *handlers.CodigoProductoHandler,
@@ -275,16 +276,24 @@ func SetupRoutes(
 	// infraestructura/middleware/auth_middleware.go
 	protegido := api.Group("/", middleware.RequireAuth())
 
+	// Usuarios y Sucursales Facturador además requieren rol "admin": los
+	// operadores no pueden ver ni operar estos dos módulos. El middleware se
+	// pasa directo a cada RegisterRoutes para que quede scopeado a sus
+	// propios prefijos (/usuarios, /sucursales-facturador, etc.) — un grupo
+	// con prefijo "/" aplicaría el middleware a TODO el resto de rutas
+	// protegidas, no solo a estas dos.
+	requireAdmin := middleware.RequireAdmin(usuarioService)
+
 	// Registrar rutas de conexiones de BD
 	dbConnectionHandler.RegisterRoutes(protegido)
 	// Registrar rutas de consultas
 	consultasHandler.RegisterRoutes(protegido)
 	// Registrar rutas de codigo producto
 	codigoProductoHandler.RegisterRoutes(protegido)
-	// Registrar rutas de usuarios/regionales/catálogo de sucursales
-	usuarioHandler.RegisterRoutes(protegido)
-	// Registrar rutas de sucursales facturador (FacturaClic)
-	sucursalFacturadorHandler.RegisterRoutes(protegido)
+	// Registrar rutas de usuarios/regionales/catálogo de sucursales (solo admin)
+	usuarioHandler.RegisterRoutes(protegido, requireAdmin)
+	// Registrar rutas de sucursales facturador (FacturaClic) (solo admin)
+	sucursalFacturadorHandler.RegisterRoutes(protegido, requireAdmin)
 	// Registrar rutas de facturas prevaloradas (boletos)
 	facturaPrevaloradaHandler.RegisterRoutes(protegido)
 	// Registrar rutas de facturas de anulación
@@ -381,7 +390,7 @@ func main() {
 	})
 
 	// Configurar rutas
-	SetupRoutes(app, authHandler, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler, logEnvioHandler)
+	SetupRoutes(app, authHandler, usuarioService, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler, logEnvioHandler)
 
 	// Iniciar servidor
 	port := ":" + config.ServerPort

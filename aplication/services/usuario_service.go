@@ -30,6 +30,7 @@ type CrearUsuarioInput struct {
 	CI            string
 	Cargo         string
 	CodigoUsuario string
+	Rol           string
 	RegionalID    *uint
 	SucursalID    *uint
 }
@@ -47,6 +48,7 @@ func (s *UsuarioService) Crear(input CrearUsuarioInput) (*models.Usuario, error)
 		CI:            input.CI,
 		Cargo:         input.Cargo,
 		CodigoUsuario: input.CodigoUsuario,
+		Rol:           input.Rol,
 		RegionalID:    input.RegionalID,
 		SucursalID:    input.SucursalID,
 		PasswordHash:  passwordHash,
@@ -64,6 +66,7 @@ type ActualizarUsuarioInput struct {
 	CI            string
 	Cargo         string
 	CodigoUsuario string
+	Rol           string
 	RegionalID    *uint
 	SucursalID    *uint
 	IsActive      bool
@@ -79,6 +82,7 @@ func (s *UsuarioService) Actualizar(input ActualizarUsuarioInput) (*models.Usuar
 	usuario.CI = input.CI
 	usuario.Cargo = input.Cargo
 	usuario.CodigoUsuario = input.CodigoUsuario
+	usuario.Rol = input.Rol
 	usuario.RegionalID = input.RegionalID
 	usuario.SucursalID = input.SucursalID
 	usuario.IsActive = input.IsActive
@@ -154,6 +158,11 @@ func (s *UsuarioService) TieneAccesoSucursal(usuarioID uint, codigoSucursalSin i
 // sucursales_permitidas_codigos).
 func (s *UsuarioService) TieneAccesoTotal(usuarioID uint) (bool, error) {
 	return s.repo.TieneAccesoTotal(usuarioID)
+}
+
+// EsAdmin indica si el usuario tiene rol "admin".
+func (s *UsuarioService) EsAdmin(usuarioID uint) (bool, error) {
+	return s.repo.EsAdmin(usuarioID)
 }
 
 // ErrCredencialesInvalidas se devuelve cuando el código de usuario no existe,

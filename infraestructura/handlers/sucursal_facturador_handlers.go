@@ -183,8 +183,12 @@ func (h *SucursalFacturadorHandler) Delete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Sucursal facturador eliminada exitosamente"})
 }
 
-func (h *SucursalFacturadorHandler) RegisterRoutes(router fiber.Router) {
-	sucursales := router.Group("/sucursales-facturador")
+// RegisterRoutes registra las rutas bajo /sucursales-facturador, todas
+// detrás de requireAdmin (los operadores no pueden ver ni operar este
+// módulo — el prefijo "/sucursales-facturador" scopea el middleware solo a
+// estas rutas, no a las demás del grupo protegido).
+func (h *SucursalFacturadorHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
+	sucursales := router.Group("/sucursales-facturador", requireAdmin)
 	sucursales.Post("/", h.Create)
 	sucursales.Get("/", h.GetAll)
 	sucursales.Get("/:id", h.GetByID)
