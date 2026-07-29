@@ -54,6 +54,26 @@ func (r *FacturaPrevaloradaRepository) CreateBatch(facturas []models.FacturaPrev
 	return nil
 }
 
+// Update guarda el resultado del envío al facturador (etapa 2): solo toca
+// las columnas de seguimiento, nunca los datos importados en la etapa 1 ni
+// la asociación SucursalFacturador.
+func (r *FacturaPrevaloradaRepository) Update(factura *models.FacturaPrevalorada) error {
+	err := r.db.Model(&models.FacturaPrevalorada{}).Where("id = ?", factura.ID).Updates(map[string]interface{}{
+		"estado":            factura.Estado,
+		"codigo_respuesta":  factura.CodigoRespuesta,
+		"mensaje_respuesta": factura.MensajeRespuesta,
+		"fecha_envio":       factura.FechaEnvio,
+		"fecha_respuesta":   factura.FechaRespuesta,
+		"cuf":               factura.CUF,
+		"numero_factura":    factura.NumeroFactura,
+		"url_documento":     factura.UrlDocumento,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("error actualizando factura prevalorada: %w", err)
+	}
+	return nil
+}
+
 func (r *FacturaPrevaloradaRepository) GetByID(id uint) (*models.FacturaPrevalorada, error) {
 	var factura models.FacturaPrevalorada
 	err := r.db.Preload("SucursalFacturador").First(&factura, id).Error
@@ -79,6 +99,21 @@ func (r *FacturaPrevaloradaRepository) GetAll(estado, loteID string) ([]models.F
 	}
 	if err := query.Order("created_at DESC").Find(&facturas).Error; err != nil {
 		return nil, fmt.Errorf("error obteniendo facturas prevaloradas: %w", err)
+	}
+	return facturas, nil
+}
+
+// GetPendientesParaEnvio lista las facturas pendientes en el orden en que el
+// EnvioWorker debe procesarlas: agrupadas por sucursal (para poder aplicar
+// el circuit breaker por sucursal) y luego por lote/orden de creación.
+func (r *FacturaPrevaloradaRepository) GetPendientesParaEnvio() ([]models.FacturaPrevalorada, error) {
+	facturas := []models.FacturaPrevalorada{}
+	err := r.db.Preload("SucursalFacturador").
+		Where("estado = ?", "pendiente").
+		Order("sucursal_facturador_id ASC, lote_id ASC, created_at ASC").
+		Find(&facturas).Error
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo facturas pendientes: %w", err)
 	}
 	return facturas, nil
 }

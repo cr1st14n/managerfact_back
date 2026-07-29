@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"managerfact/aplication/services"
 	"strconv"
 	"strings"
@@ -96,9 +97,33 @@ func (h *FacturaPrevaloradaHandler) GetByID(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Factura prevalorada encontrada", "data": factura})
 }
 
+// Facturar dispara el envío síncrono de una factura prevalorada al
+// facturador de su sucursal (etapa 2 del flujo).
+func (h *FacturaPrevaloradaHandler) Facturar(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "ID inválido"})
+	}
+
+	factura, err := h.service.Facturar(uint(id), "manual")
+	if err != nil {
+		if errors.Is(err, services.ErrFacturaYaAceptada) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"message": err.Error()})
+		}
+		if factura != nil {
+			// El intento (fallido) ya quedó guardado; se informa el detalle.
+			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"message": "Error enviando la factura al facturador", "error": err.Error(), "data": factura})
+		}
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Error facturando", "error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Factura enviada al facturador", "data": factura})
+}
+
 func (h *FacturaPrevaloradaHandler) RegisterRoutes(router fiber.Router) {
 	facturas := router.Group("/facturas-prevaloradas")
 	facturas.Post("/importar-excel", h.ImportarExcel)
+	facturas.Post("/:id/facturar", h.Facturar)
 	facturas.Get("/plantilla", h.DescargarPlantilla)
 	facturas.Get("/lotes", h.GetLotes)
 	facturas.Get("/", h.GetAll)

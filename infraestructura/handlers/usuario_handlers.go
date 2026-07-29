@@ -175,10 +175,22 @@ func (h *UsuarioHandler) GetAccesos(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "ID inválido"})
 	}
-	regionales, sucursales, err := h.service.ObtenerAccesos(uint(id))
+	accesos, err := h.service.ObtenerAccesos(uint(id))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error obteniendo accesos", "error": err.Error()})
 	}
+
+	// Mismo shape que antes ([{regional_id}], [{sucursal_id}]) para no tener
+	// que tocar el front, que ya sabe leer estos dos campos.
+	regionales := make([]fiber.Map, len(accesos.RegionalesIDs))
+	for i, id := range accesos.RegionalesIDs {
+		regionales[i] = fiber.Map{"regional_id": id}
+	}
+	sucursales := make([]fiber.Map, len(accesos.SucursalesIDs))
+	for i, id := range accesos.SucursalesIDs {
+		sucursales[i] = fiber.Map{"sucursal_id": id}
+	}
+
 	return c.JSON(fiber.Map{
 		"message": "Accesos obtenidos exitosamente",
 		"data": fiber.Map{

@@ -1,26 +1,37 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"managerfact/internal/domain/models"
 	"managerfact/internal/domain/repositories"
+	"managerfact/pkg/utils"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 )
 
+// ErrAnulacionYaAceptada se devuelve al intentar anular un registro que el
+// facturador ya aceptó — reenviarlo no tiene efecto y solo generaría ruido.
+var ErrAnulacionYaAceptada = errors.New("esta anulación ya fue aceptada por el facturador, no se puede reenviar")
+
 type FacturaAnulacionService struct {
 	repo               *repositories.FacturaAnulacionRepository
 	sucursalFacturador *repositories.SucursalFacturadorRepository
+	logEnvio           *repositories.LogEnvioRepository
 }
 
 func NewFacturaAnulacionService(
 	r *repositories.FacturaAnulacionRepository,
 	sucursalFacturadorRepo *repositories.SucursalFacturadorRepository,
+	logEnvioRepo *repositories.LogEnvioRepository,
 ) *FacturaAnulacionService {
-	return &FacturaAnulacionService{repo: r, sucursalFacturador: sucursalFacturadorRepo}
+	return &FacturaAnulacionService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo}
 }
 
 // columnasEsperadasAnulacion son los encabezados de columna del Excel de
@@ -124,8 +135,102 @@ func (s *FacturaAnulacionService) ObtenerPorID(id uint) (*models.FacturaAnulacio
 	return s.repo.GetByID(id)
 }
 
+// Anular arma el JSON de la solicitud de anulación (CUF + motivo + sucursal
+// facturador) y lo envía a clic-core/facturas/anular (ver
+// doc/EnvioFacturacion.md secciones 4 y 5). Guarda el resultado del intento
+// (aceptado/rechazado/error) incluso si la llamada falla, para no perder el
+// rastro del envío. origen es "manual" (botón del front) o "automatico"
+// (EnvioWorker) — solo se usa para el registro en logs_envio.
+func (s *FacturaAnulacionService) Anular(id uint, origen string) (*models.FacturaAnulacion, error) {
+	factura, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if factura.Estado == "aceptado" {
+		return nil, ErrAnulacionYaAceptada
+	}
+	if factura.SucursalFacturador == nil {
+		return nil, fmt.Errorf("la sucursal facturador de esta anulación no existe o fue eliminada")
+	}
+
+	tokenAcceso, err := utils.Decrypt(factura.SucursalFacturador.TokenAcceso)
+	if err != nil {
+		return nil, fmt.Errorf("error descifrando el token de la sucursal facturador: %w", err)
+	}
+
+	ahora := time.Now()
+	factura.FechaEnvio = &ahora
+	factura.Estado = "enviado"
+
+	respuesta, err := enviarAAnular(factura.SucursalFacturador, factura, tokenAcceso)
+	fechaRespuesta := time.Now()
+	factura.FechaRespuesta = &fechaRespuesta
+
+	if err != nil {
+		factura.Estado = "error"
+		factura.MensajeRespuesta = err.Error()
+		if guardarErr := s.repo.Update(factura); guardarErr != nil {
+			return nil, guardarErr
+		}
+		// Error de transporte (no de negocio): la sucursal facturador queda
+		// "en_revision" para que el EnvioWorker deje de insistir con ella
+		// hasta que vuelva a responder — ver doc/EnvioFacturacion.md sección 5.
+		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "en_revision", err.Error(), &fechaRespuesta); marcarErr != nil {
+			log.Printf("[FacturaAnulacionService] error marcando sucursal %d en_revision: %v", factura.SucursalFacturadorID, marcarErr)
+		}
+		s.registrarLog(factura.ID, factura.CodigoIntegracion, factura.SucursalFacturadorID, origen, "error", err.Error())
+		return factura, fmt.Errorf("error enviando la anulación al facturador: %w", err)
+	}
+
+	// El facturador respondió (aceptado o rechazado): la sucursal está
+	// alcanzable, así que si estaba "en_revision" se recupera sola.
+	if factura.SucursalFacturador.EstadoConexion == "en_revision" {
+		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "activo", "", nil); marcarErr != nil {
+			log.Printf("[FacturaAnulacionService] error marcando sucursal %d activa: %v", factura.SucursalFacturadorID, marcarErr)
+		}
+	}
+
+	factura.CodigoRespuesta = strconv.Itoa(respuesta.Codigo)
+	factura.MensajeRespuesta = respuesta.Mensaje
+	if respuesta.Codigo == 200 && respuesta.Respuesta == "OK" {
+		factura.Estado = "aceptado"
+	} else {
+		factura.Estado = "rechazado"
+		factura.MensajeRespuesta = fmt.Sprintf("rechazado: %s", respuesta.Mensaje)
+	}
+
+	if err := s.repo.Update(factura); err != nil {
+		return nil, err
+	}
+	s.registrarLog(factura.ID, factura.CodigoIntegracion, factura.SucursalFacturadorID, origen, factura.Estado, factura.MensajeRespuesta)
+	return factura, nil
+}
+
+// registrarLog guarda el intento en logs_envio; un fallo acá no debe abortar
+// el flujo de anulación, solo se loguea a consola.
+func (s *FacturaAnulacionService) registrarLog(facturaID uint, codigoIntegracion string, sucursalFacturadorID uint, origen, resultado, mensaje string) {
+	entrada := &models.LogEnvio{
+		Tipo:                 "anulacion",
+		FacturaID:            facturaID,
+		CodigoIntegracion:    codigoIntegracion,
+		SucursalFacturadorID: sucursalFacturadorID,
+		Origen:               origen,
+		Resultado:            resultado,
+		Mensaje:              mensaje,
+	}
+	if err := s.logEnvio.Create(entrada); err != nil {
+		log.Printf("[FacturaAnulacionService] error guardando log de envío: %v", err)
+	}
+}
+
 func (s *FacturaAnulacionService) ListarTodos(estado, loteID string) ([]models.FacturaAnulacion, error) {
 	return s.repo.GetAll(estado, loteID)
+}
+
+// ListarPendientesParaEnvio expone las facturas de anulación pendientes
+// para el EnvioWorker, en el orden en que deben procesarse.
+func (s *FacturaAnulacionService) ListarPendientesParaEnvio() ([]models.FacturaAnulacion, error) {
+	return s.repo.GetPendientesParaEnvio()
 }
 
 // ListarLotes agrega las facturas de anulación por lote de importación; el

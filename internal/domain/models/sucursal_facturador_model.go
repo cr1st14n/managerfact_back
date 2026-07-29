@@ -19,14 +19,22 @@ type SucursalFacturador struct {
 	// TokenAcceso se guarda cifrado (AES-256-GCM) y nunca se serializa
 	// directamente en JSON: el handler expone únicamente un booleano
 	// "token_configurado" en la respuesta.
-	TokenAcceso     string         `json:"-" gorm:"type:varchar(500)"`
-	CodigoMonedaBob string         `json:"codigo_moneda_bob" gorm:"type:varchar(10)"`
-	CodigoCI        string         `json:"codigo_ci" gorm:"type:varchar(20)"`
-	CodigoNit       string         `json:"codigo_nit" gorm:"type:varchar(20);not null"`
-	Activo          bool           `json:"activo" gorm:"default:true"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
+	TokenAcceso     string `json:"-" gorm:"type:varchar(500)"`
+	CodigoMonedaBob string `json:"codigo_moneda_bob" gorm:"type:varchar(10)"`
+	CodigoCI        string `json:"codigo_ci" gorm:"type:varchar(20)"`
+	CodigoNit       string `json:"codigo_nit" gorm:"type:varchar(20);not null"`
+	Activo          bool   `json:"activo" gorm:"default:true"`
+	// EstadoConexion es el circuit breaker del EnvioWorker: "activo" (por
+	// defecto) o "en_revision" cuando el último intento de envío falló por
+	// un error de transporte (facturador caído/inalcanzable, no un rechazo
+	// de negocio). Vuelve solo a "activo" en cuanto el facturador vuelve a
+	// responder — ver doc/EnvioFacturacion.md sección 5.
+	EstadoConexion      string         `json:"estado_conexion" gorm:"type:varchar(20);not null;default:'activo'"`
+	UltimoErrorConexion *time.Time     `json:"ultimo_error_conexion"`
+	UltimoErrorMensaje  string         `json:"ultimo_error_mensaje" gorm:"type:text"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+	DeletedAt           gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (SucursalFacturador) TableName() string { return "sucursales_facturador" }

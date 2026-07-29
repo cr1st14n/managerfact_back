@@ -5,6 +5,7 @@ import (
 	"log"
 	"managerfact/aplication/services"
 	"managerfact/infraestructura/handlers"
+	"managerfact/infraestructura/middleware"
 	"managerfact/internal/domain/models"
 	"managerfact/internal/domain/repositories"
 	"os"
@@ -86,11 +87,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Regional{},
 		&models.SucursalCatalogo{},
 		&models.Usuario{},
-		&models.UsuarioAccesoRegional{},
-		&models.UsuarioAccesoSucursal{},
 		&models.SucursalFacturador{},
 		&models.FacturaPrevalorada{},
 		&models.FacturaAnulacion{},
+		&models.LogEnvio{},
 	)
 
 	if err != nil {
@@ -171,10 +171,11 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 	}
 
 	sucursalesPorRegional := map[string][]sucursalSeed{
+
 		"La Paz": {
 			{4, "El Alto"}, {5, "Oruro"}, {25, "Cobija"}, {28, "Uyuni"},
 			{35, "Rurrenabaque"}, {36, "Reyes"}, {24, "San Borja"},
-			{6, "Copacabana"}, {38, "Apolo"},
+			{6, "Copacabana"}, {38, "Apolo"}, {0, "Oficina Central"},
 		},
 		"Cochabamba": {
 			{3, "Cochabamba"}, {31, "Chimoré"}, {33, "Tarija"}, {26, "Potosí"},
@@ -221,6 +222,7 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 // SetupRoutes configura todas las rutas de la API
 func SetupRoutes(
 	app *fiber.App,
+	authHandler *handlers.AuthHandler,
 	dbConnectionHandler *handlers.DbConnectionHandler,
 	consultasHandler *handlers.ConsultasHandler,
 	codigoProductoHandler *handlers.CodigoProductoHandler,
@@ -228,6 +230,7 @@ func SetupRoutes(
 	sucursalFacturadorHandler *handlers.SucursalFacturadorHandler,
 	facturaPrevaloradaHandler *handlers.FacturaPrevaloradaHandler,
 	facturaAnulacionHandler *handlers.FacturaAnulacionHandler,
+	logEnvioHandler *handlers.LogEnvioHandler,
 ) {
 	// Middleware global
 	app.Use(logger.New(logger.Config{
@@ -257,7 +260,7 @@ func SetupRoutes(
 	// Grupo de rutas API
 	api := app.Group("/api/v1")
 
-	// Ruta de health check
+	// Ruta de health check (pública)
 	api.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -265,20 +268,29 @@ func SetupRoutes(
 		})
 	})
 
+	// Login (público)
+	authHandler.RegisterRoutes(api)
+
+	// Todo lo demás requiere sesión (JWT) — ver
+	// infraestructura/middleware/auth_middleware.go
+	protegido := api.Group("/", middleware.RequireAuth())
+
 	// Registrar rutas de conexiones de BD
-	dbConnectionHandler.RegisterRoutes(api)
+	dbConnectionHandler.RegisterRoutes(protegido)
 	// Registrar rutas de consultas
-	consultasHandler.RegisterRoutes(api)
+	consultasHandler.RegisterRoutes(protegido)
 	// Registrar rutas de codigo producto
-	codigoProductoHandler.RegisterRoutes(api)
+	codigoProductoHandler.RegisterRoutes(protegido)
 	// Registrar rutas de usuarios/regionales/catálogo de sucursales
-	usuarioHandler.RegisterRoutes(api)
+	usuarioHandler.RegisterRoutes(protegido)
 	// Registrar rutas de sucursales facturador (FacturaClic)
-	sucursalFacturadorHandler.RegisterRoutes(api)
+	sucursalFacturadorHandler.RegisterRoutes(protegido)
 	// Registrar rutas de facturas prevaloradas (boletos)
-	facturaPrevaloradaHandler.RegisterRoutes(api)
+	facturaPrevaloradaHandler.RegisterRoutes(protegido)
 	// Registrar rutas de facturas de anulación
-	facturaAnulacionHandler.RegisterRoutes(api)
+	facturaAnulacionHandler.RegisterRoutes(protegido)
+	// Registrar rutas de logs de envío
+	logEnvioHandler.RegisterRoutes(protegido)
 }
 
 func main() {
@@ -308,35 +320,48 @@ func main() {
 	dbConnectionService := services.NewDbConnectionService(dbConnectionRepo)
 	dbConnectionHandler := handlers.NewDbConnectionHandler(dbConnectionService)
 
+	// usuarios (antes de consultas: ConsultasHandler necesita usuarioService
+	// para verificar accesos por sucursal)
+	usuarioRepo := repositories.NewUsuarioRepository(db)
+	usuarioService := services.NewUsuarioService(usuarioRepo)
+	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
+
+	// login / sesión
+	authHandler := handlers.NewAuthHandler(usuarioService)
+
 	// Iniciar consultas
 	consultasRepositori := repositories.NewConsutasRepository(db)
 	consultaHandler := services.NewConsultasService(consultasRepositori)
-	consultasHandler := handlers.NewConsultasHandler(consultaHandler)
+	consultasHandler := handlers.NewConsultasHandler(consultaHandler, usuarioService)
 
 	// codigo producto
 	codigoProductoRepo := repositories.NewCodigoProductoRepoRepo(db)
 	codigoProductoService := services.NewCodigoProductoService(codigoProductoRepo)
 	codigoProductoHandler := handlers.NewCodigoProductoHandler(codigoProductoService)
 
-	// usuarios
-	usuarioRepo := repositories.NewUsuarioRepository(db)
-	usuarioService := services.NewUsuarioService(usuarioRepo)
-	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
-
 	// sucursales facturador (FacturaClic)
 	sucursalFacturadorRepo := repositories.NewSucursalFacturadorRepository(db)
 	sucursalFacturadorService := services.NewSucursalFacturadorService(sucursalFacturadorRepo)
 	sucursalFacturadorHandler := handlers.NewSucursalFacturadorHandler(sucursalFacturadorService)
 
+	// logs de envío (registro de intentos, manuales y automáticos)
+	logEnvioRepo := repositories.NewLogEnvioRepository(db)
+	logEnvioHandler := handlers.NewLogEnvioHandler(logEnvioRepo)
+
 	// facturas prevaloradas (boletos)
 	facturaPrevaloradaRepo := repositories.NewFacturaPrevaloradaRepository(db)
-	facturaPrevaloradaService := services.NewFacturaPrevaloradaService(facturaPrevaloradaRepo, sucursalFacturadorRepo)
+	facturaPrevaloradaService := services.NewFacturaPrevaloradaService(facturaPrevaloradaRepo, sucursalFacturadorRepo, logEnvioRepo)
 	facturaPrevaloradaHandler := handlers.NewFacturaPrevaloradaHandler(facturaPrevaloradaService)
 
 	// facturas de anulación
 	facturaAnulacionRepo := repositories.NewFacturaAnulacionRepository(db)
-	facturaAnulacionService := services.NewFacturaAnulacionService(facturaAnulacionRepo, sucursalFacturadorRepo)
+	facturaAnulacionService := services.NewFacturaAnulacionService(facturaAnulacionRepo, sucursalFacturadorRepo, logEnvioRepo)
 	facturaAnulacionHandler := handlers.NewFacturaAnulacionHandler(facturaAnulacionService)
+
+	// envío automático de pendientes (prevaloradas + anulación) en background
+	envioWorker := services.NewEnvioWorker(facturaPrevaloradaService, facturaAnulacionService)
+	go envioWorker.Iniciar()
+
 	// Configurar Fiber
 	app := fiber.New(fiber.Config{
 		AppName:      "Invoice System API v1.0.0",
@@ -356,7 +381,7 @@ func main() {
 	})
 
 	// Configurar rutas
-	SetupRoutes(app, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler)
+	SetupRoutes(app, authHandler, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler, logEnvioHandler)
 
 	// Iniciar servidor
 	port := ":" + config.ServerPort

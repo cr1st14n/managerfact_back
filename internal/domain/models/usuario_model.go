@@ -35,8 +35,8 @@ type SucursalCatalogo struct {
 
 func (SucursalCatalogo) TableName() string { return "sucursales_catalogo" }
 
-// Usuario representa a un operador del sistema. El login todavía no está
-// implementado: por ahora solo se administra el perfil y sus accesos.
+// Usuario representa a un operador del sistema, autenticado con
+// codigo_usuario + password (login vía JWT, ver pkg/utils/jwt.go).
 type Usuario struct {
 	ID            uint              `json:"id" gorm:"primaryKey"`
 	Nombre        string            `json:"nombre" gorm:"type:varchar(150);not null"`
@@ -49,32 +49,22 @@ type Usuario struct {
 	SucursalID    *uint             `json:"sucursal_id"`
 	Sucursal      *SucursalCatalogo `json:"sucursal,omitempty" gorm:"foreignKey:SucursalID"`
 	IsActive      bool              `json:"is_active" gorm:"default:true"`
-	// AccesoTotal otorga acceso a todas las regionales/sucursales, sin
-	// necesidad de filas en UsuarioAccesoRegional/UsuarioAccesoSucursal.
-	AccesoTotal bool           `json:"acceso_total" gorm:"default:false"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+	// AccesoTotal otorga acceso a todas las sucursales sin importar
+	// SucursalesPermitidasCodigos.
+	AccesoTotal bool `json:"acceso_total" gorm:"default:false"`
+	// SucursalesPermitidasCodigos es la colección de códigos SIN de sucursal
+	// a los que puede acceder este usuario, como texto separado por comas
+	// (ej. "1,6,7") — reemplaza las antiguas tablas de acceso por
+	// regional/sucursal (usuario_accesos_regional/usuario_accesos_sucursal).
+	// Verificar acceso a una sucursal es una simple búsqueda del código SIN
+	// dentro de este texto (ver UsuarioService.TieneAccesoSucursal). El
+	// front sigue armando la selección por regional/sucursal vía IDs (más
+	// cómodo de mostrar agrupado); el backend resuelve esos IDs a códigos
+	// SIN al guardar.
+	SucursalesPermitidasCodigos string         `json:"sucursales_permitidas_codigos" gorm:"type:text"`
+	CreatedAt                   time.Time      `json:"created_at"`
+	UpdatedAt                   time.Time      `json:"updated_at"`
+	DeletedAt                   gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (Usuario) TableName() string { return "usuarios" }
-
-// UsuarioAccesoRegional otorga acceso a TODAS las sucursales de una regional.
-type UsuarioAccesoRegional struct {
-	ID         uint     `json:"id" gorm:"primaryKey"`
-	UsuarioID  uint     `json:"usuario_id" gorm:"not null;uniqueIndex:idx_usuario_regional"`
-	RegionalID uint     `json:"regional_id" gorm:"not null;uniqueIndex:idx_usuario_regional"`
-	Regional   Regional `json:"regional,omitempty" gorm:"foreignKey:RegionalID"`
-}
-
-func (UsuarioAccesoRegional) TableName() string { return "usuario_accesos_regional" }
-
-// UsuarioAccesoSucursal otorga acceso a UNA sucursal específica del catálogo.
-type UsuarioAccesoSucursal struct {
-	ID         uint             `json:"id" gorm:"primaryKey"`
-	UsuarioID  uint             `json:"usuario_id" gorm:"not null;uniqueIndex:idx_usuario_sucursal"`
-	SucursalID uint             `json:"sucursal_id" gorm:"not null;uniqueIndex:idx_usuario_sucursal"`
-	Sucursal   SucursalCatalogo `json:"sucursal,omitempty" gorm:"foreignKey:SucursalID"`
-}
-
-func (UsuarioAccesoSucursal) TableName() string { return "usuario_accesos_sucursal" }

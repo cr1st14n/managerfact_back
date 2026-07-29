@@ -53,6 +53,23 @@ func (r *FacturaAnulacionRepository) CreateBatch(facturas []models.FacturaAnulac
 	return nil
 }
 
+// Update guarda el resultado del envío al facturador (etapa 2): solo toca
+// las columnas de seguimiento, nunca los datos importados en la etapa 1 ni
+// la asociación SucursalFacturador.
+func (r *FacturaAnulacionRepository) Update(factura *models.FacturaAnulacion) error {
+	err := r.db.Model(&models.FacturaAnulacion{}).Where("id = ?", factura.ID).Updates(map[string]interface{}{
+		"estado":            factura.Estado,
+		"codigo_respuesta":  factura.CodigoRespuesta,
+		"mensaje_respuesta": factura.MensajeRespuesta,
+		"fecha_envio":       factura.FechaEnvio,
+		"fecha_respuesta":   factura.FechaRespuesta,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("error actualizando factura de anulación: %w", err)
+	}
+	return nil
+}
+
 func (r *FacturaAnulacionRepository) GetByID(id uint) (*models.FacturaAnulacion, error) {
 	var factura models.FacturaAnulacion
 	err := r.db.Preload("SucursalFacturador").First(&factura, id).Error
@@ -78,6 +95,22 @@ func (r *FacturaAnulacionRepository) GetAll(estado, loteID string) ([]models.Fac
 	}
 	if err := query.Order("created_at DESC").Find(&facturas).Error; err != nil {
 		return nil, fmt.Errorf("error obteniendo facturas de anulación: %w", err)
+	}
+	return facturas, nil
+}
+
+// GetPendientesParaEnvio lista las facturas de anulación pendientes en el
+// orden en que el EnvioWorker debe procesarlas: agrupadas por sucursal (para
+// poder aplicar el circuit breaker por sucursal) y luego por lote/orden de
+// creación.
+func (r *FacturaAnulacionRepository) GetPendientesParaEnvio() ([]models.FacturaAnulacion, error) {
+	facturas := []models.FacturaAnulacion{}
+	err := r.db.Preload("SucursalFacturador").
+		Where("estado = ?", "pendiente").
+		Order("sucursal_facturador_id ASC, lote_id ASC, created_at ASC").
+		Find(&facturas).Error
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo facturas de anulación pendientes: %w", err)
 	}
 	return facturas, nil
 }

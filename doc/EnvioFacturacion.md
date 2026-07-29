@@ -93,7 +93,7 @@ Los siguientes valores **no se guardan como columnas**: son constantes que el `F
 
 ```
 codigoCliente = "N/A"
-tipoDocumentoIdentidad = "5"
+tipoDocumentoIdentidad = "NIT"
 numeroDocumento = "0"
 nombreRazonSocial = "S/N"
 complemento = null
@@ -103,12 +103,18 @@ tipoDocumentoSector = "23"
 tipoEmision = 1
 codigoExcepcion = null
 metodoPago = "1"
-codigoMoneda = "1"
+codigoMoneda = sucursal.codigo_moneda_bob (ej. "BOB")
 cantidad = 1
 codigoUnidadMedida = "58"
 codigoDetalleTransaccion = 1
 montoDescuentoDetalle = null
 ```
+
+> Nota (confirmado probando contra el servidor real de FacturaClic en
+> `facturacion.lp.naabol.gob.bo`): `tipoDocumentoIdentidad` debe ser el
+> string `"NIT"`, no `"5"` como decía el ejemplo original — con `"5"` el
+> facturador responde `El campo 'tipoDocumentoIdentidad' 5 no se encontró
+> registrado, usa NIT`.
 
 Mapeo del boleto importado al payload del facturador:
 - `descripcion` (detalle del ítem) = `detalle`
@@ -277,9 +283,9 @@ $formattedDateTime = preg_replace('/(\.\d{3})\d+/', '$1', Carbon::now('America/L
 {
     "datosGenerales": {
         "nitEmisor": "419945029",
-        "sucursalEmisor": 0,
+        "sucursalEmisor": 0,// proviene de la sucursal
         "puntoVentaEmisor": "",
-        "codigoIntegracion": "KKKKKKKK",
+        "codigoIntegracion": "KKKKKKKK", la uuid 
         "codigoCliente": "N/A",
         "celularCliente": null,
         "emailCliente": null,

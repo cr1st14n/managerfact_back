@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"managerfact/aplication/services"
 	"strconv"
 	"strings"
@@ -98,9 +99,33 @@ func (h *FacturaAnulacionHandler) GetByID(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Factura de anulación encontrada", "data": factura})
 }
 
+// Anular dispara el envío síncrono de una solicitud de anulación al
+// facturador de su sucursal (etapa 2 del flujo).
+func (h *FacturaAnulacionHandler) Anular(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "ID inválido"})
+	}
+
+	factura, err := h.service.Anular(uint(id), "manual")
+	if err != nil {
+		if errors.Is(err, services.ErrAnulacionYaAceptada) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"message": err.Error()})
+		}
+		if factura != nil {
+			// El intento (fallido) ya quedó guardado; se informa el detalle.
+			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"message": "Error enviando la anulación al facturador", "error": err.Error(), "data": factura})
+		}
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Error anulando", "error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Anulación enviada al facturador", "data": factura})
+}
+
 func (h *FacturaAnulacionHandler) RegisterRoutes(router fiber.Router) {
 	facturas := router.Group("/facturas-anulacion")
 	facturas.Post("/importar-excel", h.ImportarExcel)
+	facturas.Post("/:id/anular", h.Anular)
 	facturas.Get("/plantilla", h.DescargarPlantilla)
 	facturas.Get("/lotes", h.GetLotes)
 	facturas.Get("/", h.GetAll)

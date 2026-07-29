@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"managerfact/internal/domain/models"
 	"managerfact/internal/domain/repositories"
@@ -132,13 +133,45 @@ func (s *UsuarioService) ConfigurarAccesos(usuarioID uint, input AccesosInput) e
 	return s.repo.SetAccesos(usuarioID, input.AccesoTotal, input.RegionalesIDs, input.SucursalesIDs)
 }
 
-func (s *UsuarioService) ObtenerAccesos(usuarioID uint) ([]models.UsuarioAccesoRegional, []models.UsuarioAccesoSucursal, error) {
+func (s *UsuarioService) ObtenerAccesos(usuarioID uint) (*repositories.AccesosResueltos, error) {
 	return s.repo.GetAccesos(usuarioID)
 }
 
 // SucursalesPermitidas resuelve qué sucursales del catálogo puede ver un
-// usuario. Todavía no está conectado a ningún flujo de login/sesión: es el
-// endpoint que se usará cuando eso exista.
+// usuario (todo el catálogo si tiene acceso total).
 func (s *UsuarioService) SucursalesPermitidas(usuarioID uint) ([]models.SucursalCatalogo, error) {
 	return s.repo.SucursalesPermitidas(usuarioID)
+}
+
+// TieneAccesoSucursal verifica si el usuario puede acceder a la sucursal
+// identificada por su código SIN — usado al filtrar consultas de facturas
+// por sucursal (ver ConsultasHandler.DataFacturas).
+func (s *UsuarioService) TieneAccesoSucursal(usuarioID uint, codigoSucursalSin int) (bool, error) {
+	return s.repo.TieneAccesoSucursal(usuarioID, codigoSucursalSin)
+}
+
+// TieneAccesoTotal indica si el usuario tiene acceso nacional (bypass de
+// sucursales_permitidas_codigos).
+func (s *UsuarioService) TieneAccesoTotal(usuarioID uint) (bool, error) {
+	return s.repo.TieneAccesoTotal(usuarioID)
+}
+
+// ErrCredencialesInvalidas se devuelve cuando el código de usuario no existe,
+// la contraseña no coincide, o el usuario está inactivo — mismo mensaje
+// genérico en los 3 casos para no filtrar cuáles códigos de usuario existen.
+var ErrCredencialesInvalidas = errors.New("usuario o contraseña incorrectos")
+
+// Login verifica codigo_usuario + password contra el hash guardado.
+func (s *UsuarioService) Login(codigoUsuario, password string) (*models.Usuario, error) {
+	usuario, err := s.repo.GetByCodigoUsuario(codigoUsuario)
+	if err != nil {
+		return nil, ErrCredencialesInvalidas
+	}
+	if !usuario.IsActive {
+		return nil, ErrCredencialesInvalidas
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(usuario.PasswordHash), []byte(password)); err != nil {
+		return nil, ErrCredencialesInvalidas
+	}
+	return usuario, nil
 }

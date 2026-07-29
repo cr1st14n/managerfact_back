@@ -2,21 +2,62 @@ package handlers
 
 import (
 	"managerfact/aplication/services"
+	"managerfact/infraestructura/middleware"
 	"managerfact/internal/domain/models"
 	"managerfact/pkg/utils"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type ConsultasHandler struct {
 	services.ConsultasService
+	usuarioService *services.UsuarioService
 }
 
-func NewConsultasHandler(s *services.ConsultasService) *ConsultasHandler {
+func NewConsultasHandler(s *services.ConsultasService, usuarioService *services.UsuarioService) *ConsultasHandler {
 	return &ConsultasHandler{
 		ConsultasService: *s,
+		usuarioService:   usuarioService,
 	}
 }
+
+// verificarAccesoSucursal exige que el usuario autenticado (usuario_id
+// puesto en Locals por middleware.RequireAuth) tenga permiso sobre el
+// codigoSucursalSin solicitado. Si viene vacío, solo se permite a usuarios
+// con acceso total — no se puede pedir "todas las sucursales" sin tenerlo.
+// Devuelve nil si el acceso es válido, o la respuesta de error ya escrita.
+func (h *ConsultasHandler) verificarAccesoSucursal(c *fiber.Ctx, codigoSucursalSin string) error {
+	usuarioID, ok := c.Locals(middleware.UsuarioIDLocal).(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+	}
+
+	if codigoSucursalSin == "" {
+		tieneAccesoTotal, err := h.usuarioService.TieneAccesoTotal(usuarioID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error verificando accesos", "error": err.Error()})
+		}
+		if !tieneAccesoTotal {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "Debes indicar una sucursal a la que tengas acceso"})
+		}
+		return nil
+	}
+
+	codigo, err := strconv.Atoi(codigoSucursalSin)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "codigoSucursalSin inválido"})
+	}
+	permitido, err := h.usuarioService.TieneAccesoSucursal(usuarioID, codigo)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error verificando accesos", "error": err.Error()})
+	}
+	if !permitido {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "No tiene acceso a la sucursal " + codigoSucursalSin})
+	}
+	return nil
+}
+
 func (h *ConsultasHandler) DataFacturas(c *fiber.Ctx) error {
 	var dataIn models.Json_consulta_data
 
@@ -55,6 +96,10 @@ func (h *ConsultasHandler) DataFacturas(c *fiber.Ctx) error {
 			"message": "Datos inválidos",
 			"errors":  errValidacion,
 		})
+	}
+
+	if err := h.verificarAccesoSucursal(c, dataIn.CodigoSucursalSin); err != nil {
+		return err
 	}
 
 	data, errDaS := h.ConsultasService.DataFacturas(dataIn)

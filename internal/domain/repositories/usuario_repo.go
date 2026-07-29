@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"managerfact/internal/domain/models"
+	"sort"
+	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -29,6 +32,20 @@ func (r *UsuarioRepository) GetByID(id uint) (*models.Usuario, error) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("usuario con ID %d no encontrado", id)
+		}
+		return nil, fmt.Errorf("error obteniendo usuario: %w", err)
+	}
+	return &usuario, nil
+}
+
+// GetByCodigoUsuario busca un usuario por su código de acceso (login);
+// usado por UsuarioService.Login.
+func (r *UsuarioRepository) GetByCodigoUsuario(codigoUsuario string) (*models.Usuario, error) {
+	var usuario models.Usuario
+	err := r.db.Where("codigo_usuario = ?", codigoUsuario).First(&usuario).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("usuario %q no encontrado", codigoUsuario)
 		}
 		return nil, fmt.Errorf("error obteniendo usuario: %w", err)
 	}
@@ -83,56 +100,142 @@ func (r *UsuarioRepository) GetSucursalesCatalogo() ([]models.SucursalCatalogo, 
 	return sucursales, nil
 }
 
-// SetAccesos reemplaza por completo la configuración de accesos de un
-// usuario: la bandera de acceso total y las regionales/sucursales asignadas.
-func (r *UsuarioRepository) SetAccesos(usuarioID uint, accesoTotal bool, regionalesIDs, sucursalesIDs []uint) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.Usuario{}).Where("id = ?", usuarioID).
-			Update("acceso_total", accesoTotal).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("usuario_id = ?", usuarioID).Delete(&models.UsuarioAccesoRegional{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("usuario_id = ?", usuarioID).Delete(&models.UsuarioAccesoSucursal{}).Error; err != nil {
-			return err
-		}
-		for _, regionalID := range regionalesIDs {
-			acceso := models.UsuarioAccesoRegional{UsuarioID: usuarioID, RegionalID: regionalID}
-			if err := tx.Create(&acceso).Error; err != nil {
-				return err
-			}
-		}
-		for _, sucursalID := range sucursalesIDs {
-			acceso := models.UsuarioAccesoSucursal{UsuarioID: usuarioID, SucursalID: sucursalID}
-			if err := tx.Create(&acceso).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+// codigosATexto ordena, deduplica y concatena códigos SIN como "1,6,7".
+func codigosATexto(codigos []int) string {
+	if len(codigos) == 0 {
+		return ""
+	}
+	set := make(map[int]struct{}, len(codigos))
+	for _, c := range codigos {
+		set[c] = struct{}{}
+	}
+	unicos := make([]int, 0, len(set))
+	for c := range set {
+		unicos = append(unicos, c)
+	}
+	sort.Ints(unicos)
+	partes := make([]string, len(unicos))
+	for i, c := range unicos {
+		partes[i] = strconv.Itoa(c)
+	}
+	return strings.Join(partes, ",")
 }
 
-// GetAccesos devuelve las regionales y sucursales asignadas directamente a
-// un usuario (sin resolver acceso total).
-func (r *UsuarioRepository) GetAccesos(usuarioID uint) ([]models.UsuarioAccesoRegional, []models.UsuarioAccesoSucursal, error) {
-	var regionales []models.UsuarioAccesoRegional
-	if err := r.db.Preload("Regional").Where("usuario_id = ?", usuarioID).Find(&regionales).Error; err != nil {
-		return nil, nil, fmt.Errorf("error obteniendo accesos por regional: %w", err)
+// textoACodigos parsea "1,6,7" a un set de códigos SIN. Texto vacío = sin
+// accesos.
+func textoACodigos(texto string) map[int]struct{} {
+	set := map[int]struct{}{}
+	texto = strings.TrimSpace(texto)
+	if texto == "" {
+		return set
+	}
+	for _, parte := range strings.Split(texto, ",") {
+		parte = strings.TrimSpace(parte)
+		if parte == "" {
+			continue
+		}
+		if codigo, err := strconv.Atoi(parte); err == nil {
+			set[codigo] = struct{}{}
+		}
+	}
+	return set
+}
+
+// SetAccesos reemplaza por completo la configuración de accesos de un
+// usuario: la bandera de acceso total y la colección de códigos SIN de
+// sucursal permitidos. regionalesIDs/sucursalesIDs son selección por
+// conveniencia desde el front (agrupada visualmente); acá se resuelven a
+// los códigos SIN de sus sucursales y se guardan ya aplanados en
+// sucursales_permitidas_codigos.
+func (r *UsuarioRepository) SetAccesos(usuarioID uint, accesoTotal bool, regionalesIDs, sucursalesIDs []uint) error {
+	var codigos []int
+
+	if len(regionalesIDs) > 0 {
+		var codigosRegionales []int
+		if err := r.db.Model(&models.SucursalCatalogo{}).
+			Where("regional_id IN ?", regionalesIDs).
+			Pluck("codigo_sucursal_sin", &codigosRegionales).Error; err != nil {
+			return fmt.Errorf("error resolviendo sucursales de las regionales: %w", err)
+		}
+		codigos = append(codigos, codigosRegionales...)
 	}
 
-	var sucursales []models.UsuarioAccesoSucursal
-	if err := r.db.Preload("Sucursal.Regional").Where("usuario_id = ?", usuarioID).Find(&sucursales).Error; err != nil {
-		return nil, nil, fmt.Errorf("error obteniendo accesos por sucursal: %w", err)
+	if len(sucursalesIDs) > 0 {
+		var codigosDirectos []int
+		if err := r.db.Model(&models.SucursalCatalogo{}).
+			Where("id IN ?", sucursalesIDs).
+			Pluck("codigo_sucursal_sin", &codigosDirectos).Error; err != nil {
+			return fmt.Errorf("error resolviendo códigos de las sucursales: %w", err)
+		}
+		codigos = append(codigos, codigosDirectos...)
 	}
 
-	return regionales, sucursales, nil
+	err := r.db.Model(&models.Usuario{}).Where("id = ?", usuarioID).Updates(map[string]interface{}{
+		"acceso_total":                  accesoTotal,
+		"sucursales_permitidas_codigos": codigosATexto(codigos),
+	}).Error
+	if err != nil {
+		return fmt.Errorf("error guardando accesos: %w", err)
+	}
+	return nil
+}
+
+// AccesosResueltos es la selección por regional/sucursal derivada de la
+// colección de códigos SIN guardada — reconstruye lo que el front necesita
+// para precargar el modal de accesos (qué regionales aparecen "completas" y
+// qué sucursales sueltas quedan marcadas).
+type AccesosResueltos struct {
+	RegionalesIDs []uint
+	SucursalesIDs []uint
+}
+
+// GetAccesos deriva, a partir de sucursales_permitidas_codigos, qué
+// regionales están completamente cubiertas y qué sucursales sueltas quedan
+// marcadas individualmente.
+func (r *UsuarioRepository) GetAccesos(usuarioID uint) (*AccesosResueltos, error) {
+	usuario, err := r.GetByID(usuarioID)
+	if err != nil {
+		return nil, err
+	}
+	permitidos := textoACodigos(usuario.SucursalesPermitidasCodigos)
+
+	sucursales, err := r.GetSucursalesCatalogo()
+	if err != nil {
+		return nil, err
+	}
+
+	porRegional := map[uint][]models.SucursalCatalogo{}
+	for _, s := range sucursales {
+		porRegional[s.RegionalID] = append(porRegional[s.RegionalID], s)
+	}
+
+	resultado := &AccesosResueltos{RegionalesIDs: []uint{}, SucursalesIDs: []uint{}}
+	for regionalID, lista := range porRegional {
+		completa := len(lista) > 0
+		for _, s := range lista {
+			if _, ok := permitidos[s.CodigoSucursalSin]; !ok {
+				completa = false
+				break
+			}
+		}
+		if completa {
+			resultado.RegionalesIDs = append(resultado.RegionalesIDs, regionalID)
+			continue
+		}
+		for _, s := range lista {
+			if _, ok := permitidos[s.CodigoSucursalSin]; ok {
+				resultado.SucursalesIDs = append(resultado.SucursalesIDs, s.ID)
+			}
+		}
+	}
+	sort.Slice(resultado.RegionalesIDs, func(i, j int) bool { return resultado.RegionalesIDs[i] < resultado.RegionalesIDs[j] })
+	sort.Slice(resultado.SucursalesIDs, func(i, j int) bool { return resultado.SucursalesIDs[i] < resultado.SucursalesIDs[j] })
+	return resultado, nil
 }
 
 // SucursalesPermitidas resuelve el catálogo efectivo de sucursales a las que
-// el usuario tiene acceso: todo el catálogo si tiene AccesoTotal, o la unión
-// de las sucursales de sus regionales asignadas más las sucursales
-// asignadas directamente.
+// el usuario tiene acceso: todo el catálogo si tiene AccesoTotal, o las que
+// coincidan con sucursales_permitidas_codigos.
 func (r *UsuarioRepository) SucursalesPermitidas(usuarioID uint) ([]models.SucursalCatalogo, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {
@@ -143,35 +246,48 @@ func (r *UsuarioRepository) SucursalesPermitidas(usuarioID uint) ([]models.Sucur
 		return r.GetSucursalesCatalogo()
 	}
 
-	var regionalesIDs []uint
-	if err := r.db.Model(&models.UsuarioAccesoRegional{}).
-		Where("usuario_id = ?", usuarioID).Pluck("regional_id", &regionalesIDs).Error; err != nil {
-		return nil, fmt.Errorf("error obteniendo regionales asignadas: %w", err)
-	}
-
-	var sucursalesDirectasIDs []uint
-	if err := r.db.Model(&models.UsuarioAccesoSucursal{}).
-		Where("usuario_id = ?", usuarioID).Pluck("sucursal_id", &sucursalesDirectasIDs).Error; err != nil {
-		return nil, fmt.Errorf("error obteniendo sucursales asignadas: %w", err)
-	}
-
-	if len(regionalesIDs) == 0 && len(sucursalesDirectasIDs) == 0 {
+	permitidos := textoACodigos(usuario.SucursalesPermitidasCodigos)
+	if len(permitidos) == 0 {
 		return []models.SucursalCatalogo{}, nil
 	}
 
-	query := r.db.Preload("Regional")
-	switch {
-	case len(regionalesIDs) > 0 && len(sucursalesDirectasIDs) > 0:
-		query = query.Where("regional_id IN ? OR id IN ?", regionalesIDs, sucursalesDirectasIDs)
-	case len(regionalesIDs) > 0:
-		query = query.Where("regional_id IN ?", regionalesIDs)
-	default:
-		query = query.Where("id IN ?", sucursalesDirectasIDs)
+	codigos := make([]int, 0, len(permitidos))
+	for c := range permitidos {
+		codigos = append(codigos, c)
 	}
 
 	var sucursales []models.SucursalCatalogo
-	if err := query.Order("codigo_sucursal_sin ASC").Find(&sucursales).Error; err != nil {
+	if err := r.db.Preload("Regional").
+		Where("codigo_sucursal_sin IN ?", codigos).
+		Order("codigo_sucursal_sin ASC").
+		Find(&sucursales).Error; err != nil {
 		return nil, fmt.Errorf("error resolviendo sucursales permitidas: %w", err)
 	}
 	return sucursales, nil
+}
+
+// TieneAccesoTotal indica si el usuario tiene acceso nacional (bypass de
+// sucursales_permitidas_codigos).
+func (r *UsuarioRepository) TieneAccesoTotal(usuarioID uint) (bool, error) {
+	usuario, err := r.GetByID(usuarioID)
+	if err != nil {
+		return false, err
+	}
+	return usuario.AccesoTotal, nil
+}
+
+// TieneAccesoSucursal verifica si el usuario puede acceder a la sucursal
+// identificada por su código SIN — el chequeo real usado al hacer consultas
+// de facturas de una sucursal puntual.
+func (r *UsuarioRepository) TieneAccesoSucursal(usuarioID uint, codigoSucursalSin int) (bool, error) {
+	usuario, err := r.GetByID(usuarioID)
+	if err != nil {
+		return false, err
+	}
+	if usuario.AccesoTotal {
+		return true, nil
+	}
+	permitidos := textoACodigos(usuario.SucursalesPermitidasCodigos)
+	_, ok := permitidos[codigoSucursalSin]
+	return ok, nil
 }

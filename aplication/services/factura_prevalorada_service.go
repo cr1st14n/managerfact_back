@@ -1,10 +1,13 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"managerfact/internal/domain/models"
 	"managerfact/internal/domain/repositories"
+	"managerfact/pkg/utils"
 	"strconv"
 	"strings"
 	"time"
@@ -13,16 +16,22 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// ErrFacturaYaAceptada se devuelve al intentar facturar un registro que el
+// facturador ya aceptó — reenviarlo generaría un documento fiscal duplicado.
+var ErrFacturaYaAceptada = errors.New("esta factura ya fue aceptada por el facturador, no se puede reenviar")
+
 type FacturaPrevaloradaService struct {
 	repo               *repositories.FacturaPrevaloradaRepository
 	sucursalFacturador *repositories.SucursalFacturadorRepository
+	logEnvio           *repositories.LogEnvioRepository
 }
 
 func NewFacturaPrevaloradaService(
 	r *repositories.FacturaPrevaloradaRepository,
 	sucursalFacturadorRepo *repositories.SucursalFacturadorRepository,
+	logEnvioRepo *repositories.LogEnvioRepository,
 ) *FacturaPrevaloradaService {
-	return &FacturaPrevaloradaService{repo: r, sucursalFacturador: sucursalFacturadorRepo}
+	return &FacturaPrevaloradaService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo}
 }
 
 // columnasEsperadas son los encabezados de columna del Excel de boletos
@@ -204,8 +213,107 @@ func (s *FacturaPrevaloradaService) ObtenerPorID(id uint) (*models.FacturaPreval
 	return s.repo.GetByID(id)
 }
 
+// Facturar arma el JSON de la factura prevalorada (boleto + sucursal
+// facturador) y lo envía a clic-core/facturas/recibir-sincrono (etapa 2 del
+// flujo, ver doc/EnvioFacturacion.md sección 2 y 5). Guarda el resultado del
+// intento (aceptado/rechazado/error) incluso si la llamada falla, para no
+// perder el rastro del envío. origen es "manual" (botón del front) o
+// "automatico" (EnvioWorker) — solo se usa para el registro en logs_envio.
+func (s *FacturaPrevaloradaService) Facturar(id uint, origen string) (*models.FacturaPrevalorada, error) {
+	factura, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if factura.Estado == "aceptado" {
+		return nil, ErrFacturaYaAceptada
+	}
+	if factura.SucursalFacturador == nil {
+		return nil, fmt.Errorf("la sucursal facturador de esta factura no existe o fue eliminada")
+	}
+
+	tokenAcceso, err := utils.Decrypt(factura.SucursalFacturador.TokenAcceso)
+	if err != nil {
+		return nil, fmt.Errorf("error descifrando el token de la sucursal facturador: %w", err)
+	}
+
+	ahora := time.Now()
+	factura.FechaEnvio = &ahora
+	factura.Estado = "enviado"
+
+	respuesta, err := enviarAFacturador(factura.SucursalFacturador, factura, tokenAcceso)
+	fechaRespuesta := time.Now()
+	factura.FechaRespuesta = &fechaRespuesta
+
+	if err != nil {
+		factura.Estado = "error"
+		factura.MensajeRespuesta = err.Error()
+		if guardarErr := s.repo.Update(factura); guardarErr != nil {
+			return nil, guardarErr
+		}
+		// Error de transporte (no de negocio): la sucursal facturador queda
+		// "en_revision" para que el EnvioWorker deje de insistir con ella
+		// hasta que vuelva a responder — ver doc/EnvioFacturacion.md sección 5.
+		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "en_revision", err.Error(), &fechaRespuesta); marcarErr != nil {
+			log.Printf("[FacturaPrevaloradaService] error marcando sucursal %d en_revision: %v", factura.SucursalFacturadorID, marcarErr)
+		}
+		s.registrarLog(factura.ID, factura.CodigoIntegracion, factura.SucursalFacturadorID, origen, "error", err.Error())
+		return factura, fmt.Errorf("error enviando al facturador: %w", err)
+	}
+
+	// El facturador respondió (aceptado o rechazado): la sucursal está
+	// alcanzable, así que si estaba "en_revision" se recupera sola.
+	if factura.SucursalFacturador.EstadoConexion == "en_revision" {
+		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "activo", "", nil); marcarErr != nil {
+			log.Printf("[FacturaPrevaloradaService] error marcando sucursal %d activa: %v", factura.SucursalFacturadorID, marcarErr)
+		}
+	}
+
+	factura.CodigoRespuesta = strconv.Itoa(respuesta.Codigo)
+	factura.MensajeRespuesta = respuesta.Mensaje
+	if respuesta.Codigo == 200 && respuesta.Respuesta == "OK" {
+		factura.Estado = "aceptado"
+		factura.CUF = respuesta.CUF
+		factura.UrlDocumento = respuesta.UrlDocumento
+		if respuesta.NumeroFactura != 0 {
+			factura.NumeroFactura = strconv.Itoa(respuesta.NumeroFactura)
+		}
+	} else {
+		factura.Estado = "rechazado"
+		factura.MensajeRespuesta = fmt.Sprintf("rechazado: %s", respuesta.Mensaje)
+	}
+
+	if err := s.repo.Update(factura); err != nil {
+		return nil, err
+	}
+	s.registrarLog(factura.ID, factura.CodigoIntegracion, factura.SucursalFacturadorID, origen, factura.Estado, factura.MensajeRespuesta)
+	return factura, nil
+}
+
+// registrarLog guarda el intento en logs_envio; un fallo acá no debe abortar
+// el flujo de facturación, solo se loguea a consola.
+func (s *FacturaPrevaloradaService) registrarLog(facturaID uint, codigoIntegracion string, sucursalFacturadorID uint, origen, resultado, mensaje string) {
+	entrada := &models.LogEnvio{
+		Tipo:                 "prevalorada",
+		FacturaID:            facturaID,
+		CodigoIntegracion:    codigoIntegracion,
+		SucursalFacturadorID: sucursalFacturadorID,
+		Origen:               origen,
+		Resultado:            resultado,
+		Mensaje:              mensaje,
+	}
+	if err := s.logEnvio.Create(entrada); err != nil {
+		log.Printf("[FacturaPrevaloradaService] error guardando log de envío: %v", err)
+	}
+}
+
 func (s *FacturaPrevaloradaService) ListarTodos(estado, loteID string) ([]models.FacturaPrevalorada, error) {
 	return s.repo.GetAll(estado, loteID)
+}
+
+// ListarPendientesParaEnvio expone las facturas pendientes para el
+// EnvioWorker, en el orden en que deben procesarse.
+func (s *FacturaPrevaloradaService) ListarPendientesParaEnvio() ([]models.FacturaPrevalorada, error) {
+	return s.repo.GetPendientesParaEnvio()
 }
 
 // ListarLotes agrega las facturas por lote de importación (registro de

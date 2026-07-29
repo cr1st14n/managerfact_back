@@ -42,6 +42,11 @@ type FacturaPrevalorada struct {
 	FechaEnvio       *time.Time `json:"fecha_envio"`
 	FechaRespuesta   *time.Time `json:"fecha_respuesta"`
 	IntentosConsulta int        `json:"intentos_consulta" gorm:"default:0"`
+	// CUF identifica el documento fiscal ya aceptado por el SIN — se
+	// necesita más adelante para armar el Excel de anulación (sección 4).
+	CUF           string `json:"cuf" gorm:"type:varchar(100)"`
+	NumeroFactura string `json:"numero_factura" gorm:"type:varchar(50)"`
+	UrlDocumento  string `json:"url_documento" gorm:"type:text"`
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
