@@ -15,7 +15,7 @@ type FacturaPrevalorada struct {
 	SucursalFacturadorID uint                `json:"sucursal_facturador_id" gorm:"not null"`
 	SucursalFacturador   *SucursalFacturador `json:"sucursal_facturador,omitempty" gorm:"foreignKey:SucursalFacturadorID"`
 	LoteID               string              `json:"lote_id" gorm:"type:varchar(36);not null;index"`
-	CodigoIntegracion    string              `json:"codigo_integracion" gorm:"type:varchar(64);not null;uniqueIndex"`
+	CodigoIntegracion    string              `json:"codigo_integracion" gorm:"type:varchar(64);not null;index"`
 	// Tipo es fijo "FACTURA_PREVALORADA": no viene del Excel, existe para
 	// acomodar otros tipos de factura a futuro sin construir hoy una
 	// abstracción genérica.

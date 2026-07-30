@@ -25,7 +25,7 @@ type FacturaAnulacion struct {
 	// Etapa 1: datos importados del Excel. A diferencia de
 	// FacturaPrevalorada, CodigoIntegracion NO se genera acá: es el de la
 	// factura original que se quiere anular, viene del Excel junto con Cuf.
-	CodigoIntegracion string `json:"codigo_integracion" gorm:"type:varchar(64);not null;uniqueIndex"`
+	CodigoIntegracion string `json:"codigo_integracion" gorm:"type:varchar(64);not null;index"`
 	Cuf               string `json:"cuf" gorm:"type:varchar(250);not null"`
 	CodigoMotivo      string `json:"codigo_motivo" gorm:"type:varchar(10);not null"`
 
