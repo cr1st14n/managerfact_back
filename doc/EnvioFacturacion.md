@@ -76,6 +76,7 @@ Antes de importar el archivo se selecciona **una sola vez, para todo el lote**: 
 | `costo_dua_dolares` | Excel — costo del DUA, en dólares |
 | `fecha_compra_boleto` | Excel — fecha de compra del boleto aéreo |
 | `tipo_cambio` | Excel — tc vigente **a la fecha de `fecha_compra_boleto`**. Se guarda tal cual, sin recalcular |
+| `total_bob` | calculado al importar = `costo_dua_dolares * tipo_cambio` (2 decimales) — no viene del Excel |
 | `fecha_emision` | Excel |
 
 Seguimiento de envío (se completa en la etapa 2):
@@ -119,12 +120,12 @@ montoDescuentoDetalle = null
 Mapeo del boleto importado al payload del facturador:
 - `descripcion` (detalle del ítem) = `detalle`
 - `codigoProducto` = `codigo_producto`
-- `precioUnitario` / `subtotal` / `montoTotal` / `montoTotalSujetoIva` = `costo_dua_dolares`
+- `precioUnitario` / `subtotal` / `montoTotal` / `montoTotalSujetoIva` = `total_bob` (monto en BOB; es lo único que se factura)
+- `montoTotalMoneda` = `costo_dua_dolares` (monto en la moneda de origen del gasto, $us)
 - `tipoCambio` = `tipo_cambio`
 - `fechaEmision` = `fecha_emision`
 
 ### Pendiente de confirmar (no bloquea el resto del diseño)
-- `montoTotalMoneda`: ¿= `costo_dua_dolares / tipo_cambio`?
 - `fechaEmisionFactura`: ¿= `fechaEmision`?
 - `emailCliente`: ¿vacío o algún valor por defecto?
 - `usuario`: ¿el usuario que importa el Excel, o un valor fijo de sistema?

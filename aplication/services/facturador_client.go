@@ -87,21 +87,38 @@ func redondear2(valor float64) float64 {
 	return math.Round(valor*100) / 100
 }
 
+// zonaLaPaz es la hora de Bolivia: UTC-4 fijo, no observa horario de verano.
+var zonaLaPaz = time.FixedZone("-04:00", -4*60*60)
+
+// calcularFechaEmision arma la fechaEmision que se manda al facturador con
+// tipoEmision=3 (emisión diferida, ver doc/EnvioFacturacion.md "PRUEBA JSON
+// testeado"). Conserva el año/mes/día de factura.FechaEmision tal cual está
+// guardado (sin convertir de huso horario, para no correrlo un día) y le fija
+// hora 10:00:00 en La Paz. Si esa fecha es la de hoy, en cambio usa la hora
+// actual menos 10 minutos, porque el facturador rechaza una fechaEmision en
+// el futuro. Formato con milisegundos (3 dígitos fijos) y offset con dos
+// puntos, igual al que devuelve FacturaClic en sus respuestas.
+func calcularFechaEmision(fechaEmision time.Time) string {
+	ahora := time.Now().In(zonaLaPaz)
+	var momento time.Time
+	if fechaEmision.Year() == ahora.Year() && fechaEmision.Month() == ahora.Month() && fechaEmision.Day() == ahora.Day() {
+		momento = ahora.Add(-10 * time.Minute)
+	} else {
+		momento = time.Date(fechaEmision.Year(), fechaEmision.Month(), fechaEmision.Day(), 10, 0, 0, 0, zonaLaPaz)
+	}
+	return momento.Format("2006-01-02T15:04:05.000-07:00")
+}
+
 // construirPayloadFacturador arma el JSON combinando el boleto (etapa 1) con
 // la configuración de la sucursal facturador y los valores fijos documentados.
 //
-// fechaEmision (cabecera) y fechaEmisionFactura se dejan en null: así es como
-// luce el payload de la prueba real que quedó VERIFICADA con tipoEmision=1
-// (online) — el SIN asigna la fecha de emisión real en la respuesta.
-// montoTotalMoneda = montoTotal / tipoCambio, consistente con el ejemplo
-// documentado (13.9 / 6.96 ≈ 2).
+// montoTotal (y precioUnitario/subtotal/montoTotalSujetoIva) van en BOB —
+// factura.TotalBob, ya calculado al importar como costo_dua_dolares * tc.
+// montoTotalMoneda es el monto en la moneda de origen del gasto (dólares).
 func construirPayloadFacturador(factura *models.FacturaPrevalorada, sucursal *models.SucursalFacturador) facturadorRequest {
-	montoTotalMoneda := factura.CostoDuaDolares
-	if factura.TipoCambio != 0 {
-		montoTotalMoneda = factura.CostoDuaDolares / factura.TipoCambio
-	}
-	montoTotalMoneda = redondear2(montoTotalMoneda)
-	montoTotal := redondear2(factura.CostoDuaDolares)
+	// montoTotalMoneda := redondear2(factura.CostoDuaDolares)
+	montoTotal := factura.TotalBob
+	fechaEmision := calcularFechaEmision(factura.FechaEmision)
 
 	return facturadorRequest{
 		DatosGenerales: facturadorDatosGenerales{
@@ -120,8 +137,8 @@ func construirPayloadFacturador(factura *models.FacturaPrevalorada, sucursal *mo
 				TipoDocumentoFiscal:    1,
 				TipoDocumentoSector:    "23",
 				CodigoExcepcion:        nil,
-				TipoEmision:            1,
-				FechaEmision:           nil,
+				TipoEmision:            3,
+				FechaEmision:           &fechaEmision,
 				NombreRazonSocial:      "S/N",
 				TipoDocumentoIdentidad: "NIT",
 				NumeroDocumento:        "0",
@@ -129,8 +146,8 @@ func construirPayloadFacturador(factura *models.FacturaPrevalorada, sucursal *mo
 				FechaEmisionFactura:    nil,
 				MetodoPago:             "1",
 				CodigoMoneda:           sucursal.CodigoMonedaBob,
-				TipoCambio:             factura.TipoCambio,
-				MontoTotalMoneda:       montoTotalMoneda,
+				TipoCambio:             1,
+				MontoTotalMoneda:       montoTotal,
 				MontoTotal:             montoTotal,
 				MontoTotalSujetoIva:    montoTotal,
 				Usuario:                "ManagerFact",

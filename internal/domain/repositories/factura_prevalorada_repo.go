@@ -13,18 +13,22 @@ import (
 // importación, con el contexto con el que se cargó (sucursal, tipo) y el
 // desglose de estados de envío.
 type LoteResumen struct {
-	LoteID                   string    `json:"lote_id"`
-	SucursalFacturadorID     uint      `json:"sucursal_facturador_id"`
-	SucursalFacturadorNombre string    `json:"sucursal_facturador_nombre"`
-	Tipo                     string    `json:"tipo"`
-	Observacion              string    `json:"observacion"`
-	Total                    int64     `json:"total"`
-	Pendientes               int64     `json:"pendientes"`
-	Enviados                 int64     `json:"enviados"`
-	Aceptados                int64     `json:"aceptados"`
-	Rechazados               int64     `json:"rechazados"`
-	ConError                 int64     `json:"con_error"`
-	FechaImportacion         time.Time `json:"fecha_importacion"`
+	LoteID                   string `json:"lote_id"`
+	SucursalFacturadorID     uint   `json:"sucursal_facturador_id"`
+	SucursalFacturadorNombre string `json:"sucursal_facturador_nombre"`
+	// CodigoSucursalSin no se serializa: solo se usa para filtrar el lote por
+	// las sucursales permitidas del usuario (ver
+	// FacturaPrevaloradaService.ListarLotes).
+	CodigoSucursalSin int       `json:"-"`
+	Tipo              string    `json:"tipo"`
+	Observacion       string    `json:"observacion"`
+	Total             int64     `json:"total"`
+	Pendientes        int64     `json:"pendientes"`
+	Enviados          int64     `json:"enviados"`
+	Aceptados         int64     `json:"aceptados"`
+	Rechazados        int64     `json:"rechazados"`
+	ConError          int64     `json:"con_error"`
+	FechaImportacion  time.Time `json:"fecha_importacion"`
 }
 
 type FacturaPrevaloradaRepository struct {
@@ -127,6 +131,7 @@ func (r *FacturaPrevaloradaRepository) GetLotes() ([]LoteResumen, error) {
 			fp.lote_id,
 			fp.sucursal_facturador_id,
 			sf.nombre AS sucursal_facturador_nombre,
+			sf.codigo_sucursal_sin,
 			fp.tipo,
 			MIN(fp.observacion) AS observacion,
 			COUNT(*) AS total,
@@ -139,7 +144,7 @@ func (r *FacturaPrevaloradaRepository) GetLotes() ([]LoteResumen, error) {
 		`).
 		Joins("JOIN sucursales_facturador AS sf ON sf.id = fp.sucursal_facturador_id").
 		Where("fp.deleted_at IS NULL").
-		Group("fp.lote_id, fp.sucursal_facturador_id, sf.nombre, fp.tipo").
+		Group("fp.lote_id, fp.sucursal_facturador_id, sf.nombre, sf.codigo_sucursal_sin, fp.tipo").
 		Order("MIN(fp.created_at) DESC").
 		Scan(&lotes).Error
 	if err != nil {

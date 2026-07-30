@@ -20,18 +20,52 @@ import (
 // facturador ya aceptó — reenviarlo generaría un documento fiscal duplicado.
 var ErrFacturaYaAceptada = errors.New("esta factura ya fue aceptada por el facturador, no se puede reenviar")
 
+// ErrSinPermisoSucursal se devuelve cuando el usuario autenticado intenta
+// cargar un Excel o consultar facturas de una sucursal que no tiene entre
+// sus sucursales permitidas (usuarios.sucursales_permitidas_codigos).
+var ErrSinPermisoSucursal = errors.New("no tienes permiso para esta sucursal")
+
 type FacturaPrevaloradaService struct {
 	repo               *repositories.FacturaPrevaloradaRepository
 	sucursalFacturador *repositories.SucursalFacturadorRepository
 	logEnvio           *repositories.LogEnvioRepository
+	usuarioService     *UsuarioService
 }
 
 func NewFacturaPrevaloradaService(
 	r *repositories.FacturaPrevaloradaRepository,
 	sucursalFacturadorRepo *repositories.SucursalFacturadorRepository,
 	logEnvioRepo *repositories.LogEnvioRepository,
+	usuarioService *UsuarioService,
 ) *FacturaPrevaloradaService {
-	return &FacturaPrevaloradaService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo}
+	return &FacturaPrevaloradaService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo, usuarioService: usuarioService}
+}
+
+// codigosSucursalPermitidos resuelve, para el conjunto de codigo_sucursal_sin
+// dado, cuáles puede ver el usuario — usa el mismo chequeo directo que
+// TieneAccesoSucursal (acceso_total o coincidencia en
+// sucursales_permitidas_codigos) para cada código distinto, SIN pasar por el
+// catálogo sucursales_catalogo: SucursalFacturador es independiente de ese
+// catálogo (ver doc/EnvioFacturacion.md sección 1), así que un código de
+// sucursal facturador que no esté en el catálogo igual debe ser visible si
+// el usuario tiene permiso sobre ese código.
+func codigosSucursalPermitidos(usuarioService *UsuarioService, usuarioID uint, codigos []int) (map[int]bool, error) {
+	permitidos := make(map[int]bool, len(codigos))
+	vistos := make(map[int]bool, len(codigos))
+	for _, codigo := range codigos {
+		if vistos[codigo] {
+			continue
+		}
+		vistos[codigo] = true
+		ok, err := usuarioService.TieneAccesoSucursal(usuarioID, codigo)
+		if err != nil {
+			return nil, fmt.Errorf("error verificando accesos: %w", err)
+		}
+		if ok {
+			permitidos[codigo] = true
+		}
+	}
+	return permitidos, nil
 }
 
 // columnasEsperadas son los encabezados de columna del Excel de boletos
@@ -59,9 +93,17 @@ type ImportarExcelResultado struct {
 // válidas como facturas_prevaloradas en estado "pendiente", todas fijadas a
 // la sucursalFacturadorID elegida antes de importar (etapa 1 del flujo).
 // Las filas inválidas se reportan pero no abortan el archivo completo.
-func (s *FacturaPrevaloradaService) ImportarExcel(archivo io.Reader, sucursalFacturadorID uint, observacion string) (*ImportarExcelResultado, error) {
-	if _, err := s.sucursalFacturador.GetByID(sucursalFacturadorID); err != nil {
+func (s *FacturaPrevaloradaService) ImportarExcel(usuarioID uint, archivo io.Reader, sucursalFacturadorID uint, observacion string) (*ImportarExcelResultado, error) {
+	sucursal, err := s.sucursalFacturador.GetByID(sucursalFacturadorID)
+	if err != nil {
 		return nil, fmt.Errorf("sucursal facturador inválida: %w", err)
+	}
+	permitido, err := s.usuarioService.TieneAccesoSucursal(usuarioID, sucursal.CodigoSucursalSin)
+	if err != nil {
+		return nil, fmt.Errorf("error verificando accesos: %w", err)
+	}
+	if !permitido {
+		return nil, ErrSinPermisoSucursal
 	}
 	observacion = strings.TrimSpace(observacion)
 	if observacion == "" {
@@ -183,6 +225,7 @@ func parsearFilaBoleto(fila []string, indiceColumna map[string]int, sucursalFact
 		CostoDuaDolares:      costoDua,
 		FechaCompraBoleto:    fechaCompraBoleto,
 		TipoCambio:           tipoCambio,
+		TotalBob:             redondear2(costoDua * tipoCambio),
 		FechaEmision:         fechaEmision,
 		Estado:               "pendiente",
 	}, nil
@@ -209,8 +252,22 @@ func parsearFecha(valor string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("formato de fecha no reconocido")
 }
 
-func (s *FacturaPrevaloradaService) ObtenerPorID(id uint) (*models.FacturaPrevalorada, error) {
-	return s.repo.GetByID(id)
+func (s *FacturaPrevaloradaService) ObtenerPorID(usuarioID, id uint) (*models.FacturaPrevalorada, error) {
+	factura, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if factura.SucursalFacturador == nil {
+		return nil, fmt.Errorf("la sucursal facturador de esta factura no existe o fue eliminada")
+	}
+	permitido, err := s.usuarioService.TieneAccesoSucursal(usuarioID, factura.SucursalFacturador.CodigoSucursalSin)
+	if err != nil {
+		return nil, fmt.Errorf("error verificando accesos: %w", err)
+	}
+	if !permitido {
+		return nil, ErrSinPermisoSucursal
+	}
+	return factura, nil
 }
 
 // Facturar arma el JSON de la factura prevalorada (boleto + sucursal
@@ -306,8 +363,30 @@ func (s *FacturaPrevaloradaService) registrarLog(facturaID uint, codigoIntegraci
 	}
 }
 
-func (s *FacturaPrevaloradaService) ListarTodos(estado, loteID string) ([]models.FacturaPrevalorada, error) {
-	return s.repo.GetAll(estado, loteID)
+// ListarTodos devuelve solo las facturas de sucursales que el usuario tiene
+// permitidas (ver codigosSucursalPermitidos).
+func (s *FacturaPrevaloradaService) ListarTodos(usuarioID uint, estado, loteID string) ([]models.FacturaPrevalorada, error) {
+	facturas, err := s.repo.GetAll(estado, loteID)
+	if err != nil {
+		return nil, err
+	}
+	codigos := make([]int, 0, len(facturas))
+	for _, f := range facturas {
+		if f.SucursalFacturador != nil {
+			codigos = append(codigos, f.SucursalFacturador.CodigoSucursalSin)
+		}
+	}
+	permitidos, err := codigosSucursalPermitidos(s.usuarioService, usuarioID, codigos)
+	if err != nil {
+		return nil, err
+	}
+	visibles := make([]models.FacturaPrevalorada, 0, len(facturas))
+	for _, f := range facturas {
+		if f.SucursalFacturador != nil && permitidos[f.SucursalFacturador.CodigoSucursalSin] {
+			visibles = append(visibles, f)
+		}
+	}
+	return visibles, nil
 }
 
 // ListarPendientesParaEnvio expone las facturas pendientes para el
@@ -317,10 +396,28 @@ func (s *FacturaPrevaloradaService) ListarPendientesParaEnvio() ([]models.Factur
 }
 
 // ListarLotes agrega las facturas por lote de importación (registro de
-// lotes); el detalle de cada lote se obtiene después con
-// ListarTodos("", loteID).
-func (s *FacturaPrevaloradaService) ListarLotes() ([]repositories.LoteResumen, error) {
-	return s.repo.GetLotes()
+// lotes), filtrando a las sucursales permitidas del usuario; el detalle de
+// cada lote se obtiene después con ListarTodos(usuarioID, "", loteID).
+func (s *FacturaPrevaloradaService) ListarLotes(usuarioID uint) ([]repositories.LoteResumen, error) {
+	lotes, err := s.repo.GetLotes()
+	if err != nil {
+		return nil, err
+	}
+	codigos := make([]int, 0, len(lotes))
+	for _, l := range lotes {
+		codigos = append(codigos, l.CodigoSucursalSin)
+	}
+	permitidos, err := codigosSucursalPermitidos(s.usuarioService, usuarioID, codigos)
+	if err != nil {
+		return nil, err
+	}
+	visibles := make([]repositories.LoteResumen, 0, len(lotes))
+	for _, l := range lotes {
+		if permitidos[l.CodigoSucursalSin] {
+			visibles = append(visibles, l)
+		}
+	}
+	return visibles, nil
 }
 
 // GenerarPlantilla arma el .xlsx de ejemplo con las columnas que espera

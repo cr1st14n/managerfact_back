@@ -359,12 +359,12 @@ func main() {
 
 	// facturas prevaloradas (boletos)
 	facturaPrevaloradaRepo := repositories.NewFacturaPrevaloradaRepository(db)
-	facturaPrevaloradaService := services.NewFacturaPrevaloradaService(facturaPrevaloradaRepo, sucursalFacturadorRepo, logEnvioRepo)
+	facturaPrevaloradaService := services.NewFacturaPrevaloradaService(facturaPrevaloradaRepo, sucursalFacturadorRepo, logEnvioRepo, usuarioService)
 	facturaPrevaloradaHandler := handlers.NewFacturaPrevaloradaHandler(facturaPrevaloradaService)
 
 	// facturas de anulación
 	facturaAnulacionRepo := repositories.NewFacturaAnulacionRepository(db)
-	facturaAnulacionService := services.NewFacturaAnulacionService(facturaAnulacionRepo, sucursalFacturadorRepo, logEnvioRepo)
+	facturaAnulacionService := services.NewFacturaAnulacionService(facturaAnulacionRepo, sucursalFacturadorRepo, logEnvioRepo, usuarioService)
 	facturaAnulacionHandler := handlers.NewFacturaAnulacionHandler(facturaAnulacionService)
 
 	// envío automático de pendientes (prevaloradas + anulación) en background

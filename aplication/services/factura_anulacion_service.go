@@ -24,14 +24,16 @@ type FacturaAnulacionService struct {
 	repo               *repositories.FacturaAnulacionRepository
 	sucursalFacturador *repositories.SucursalFacturadorRepository
 	logEnvio           *repositories.LogEnvioRepository
+	usuarioService     *UsuarioService
 }
 
 func NewFacturaAnulacionService(
 	r *repositories.FacturaAnulacionRepository,
 	sucursalFacturadorRepo *repositories.SucursalFacturadorRepository,
 	logEnvioRepo *repositories.LogEnvioRepository,
+	usuarioService *UsuarioService,
 ) *FacturaAnulacionService {
-	return &FacturaAnulacionService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo}
+	return &FacturaAnulacionService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo, usuarioService: usuarioService}
 }
 
 // columnasEsperadasAnulacion son los encabezados de columna del Excel de
@@ -44,9 +46,17 @@ var columnasEsperadasAnulacion = []string{"cuf", "codigo_motivo", "codigo_integr
 // filas válidas como facturas_anulacion en estado "pendiente", todas
 // fijadas a la sucursalFacturadorID elegida antes de importar. Las filas
 // inválidas se reportan pero no abortan el archivo completo.
-func (s *FacturaAnulacionService) ImportarExcel(archivo io.Reader, sucursalFacturadorID uint, observacion string) (*ImportarExcelResultado, error) {
-	if _, err := s.sucursalFacturador.GetByID(sucursalFacturadorID); err != nil {
+func (s *FacturaAnulacionService) ImportarExcel(usuarioID uint, archivo io.Reader, sucursalFacturadorID uint, observacion string) (*ImportarExcelResultado, error) {
+	sucursal, err := s.sucursalFacturador.GetByID(sucursalFacturadorID)
+	if err != nil {
 		return nil, fmt.Errorf("sucursal facturador inválida: %w", err)
+	}
+	permitido, err := s.usuarioService.TieneAccesoSucursal(usuarioID, sucursal.CodigoSucursalSin)
+	if err != nil {
+		return nil, fmt.Errorf("error verificando accesos: %w", err)
+	}
+	if !permitido {
+		return nil, ErrSinPermisoSucursal
 	}
 	observacion = strings.TrimSpace(observacion)
 	if observacion == "" {
@@ -131,8 +141,22 @@ func parsearFilaAnulacion(fila []string, indiceColumna map[string]int, sucursalF
 	}, nil
 }
 
-func (s *FacturaAnulacionService) ObtenerPorID(id uint) (*models.FacturaAnulacion, error) {
-	return s.repo.GetByID(id)
+func (s *FacturaAnulacionService) ObtenerPorID(usuarioID, id uint) (*models.FacturaAnulacion, error) {
+	factura, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if factura.SucursalFacturador == nil {
+		return nil, fmt.Errorf("la sucursal facturador de esta anulación no existe o fue eliminada")
+	}
+	permitido, err := s.usuarioService.TieneAccesoSucursal(usuarioID, factura.SucursalFacturador.CodigoSucursalSin)
+	if err != nil {
+		return nil, fmt.Errorf("error verificando accesos: %w", err)
+	}
+	if !permitido {
+		return nil, ErrSinPermisoSucursal
+	}
+	return factura, nil
 }
 
 // Anular arma el JSON de la solicitud de anulación (CUF + motivo + sucursal
@@ -223,8 +247,30 @@ func (s *FacturaAnulacionService) registrarLog(facturaID uint, codigoIntegracion
 	}
 }
 
-func (s *FacturaAnulacionService) ListarTodos(estado, loteID string) ([]models.FacturaAnulacion, error) {
-	return s.repo.GetAll(estado, loteID)
+// ListarTodos devuelve solo las facturas de anulación de sucursales que el
+// usuario tiene permitidas (ver codigosSucursalPermitidos).
+func (s *FacturaAnulacionService) ListarTodos(usuarioID uint, estado, loteID string) ([]models.FacturaAnulacion, error) {
+	facturas, err := s.repo.GetAll(estado, loteID)
+	if err != nil {
+		return nil, err
+	}
+	codigos := make([]int, 0, len(facturas))
+	for _, f := range facturas {
+		if f.SucursalFacturador != nil {
+			codigos = append(codigos, f.SucursalFacturador.CodigoSucursalSin)
+		}
+	}
+	permitidos, err := codigosSucursalPermitidos(s.usuarioService, usuarioID, codigos)
+	if err != nil {
+		return nil, err
+	}
+	visibles := make([]models.FacturaAnulacion, 0, len(facturas))
+	for _, f := range facturas {
+		if f.SucursalFacturador != nil && permitidos[f.SucursalFacturador.CodigoSucursalSin] {
+			visibles = append(visibles, f)
+		}
+	}
+	return visibles, nil
 }
 
 // ListarPendientesParaEnvio expone las facturas de anulación pendientes
@@ -233,10 +279,29 @@ func (s *FacturaAnulacionService) ListarPendientesParaEnvio() ([]models.FacturaA
 	return s.repo.GetPendientesParaEnvio()
 }
 
-// ListarLotes agrega las facturas de anulación por lote de importación; el
-// detalle de cada lote se obtiene después con ListarTodos("", loteID).
-func (s *FacturaAnulacionService) ListarLotes() ([]repositories.LoteResumenAnulacion, error) {
-	return s.repo.GetLotes()
+// ListarLotes agrega las facturas de anulación por lote de importación,
+// filtrando a las sucursales permitidas del usuario; el detalle de cada
+// lote se obtiene después con ListarTodos(usuarioID, "", loteID).
+func (s *FacturaAnulacionService) ListarLotes(usuarioID uint) ([]repositories.LoteResumenAnulacion, error) {
+	lotes, err := s.repo.GetLotes()
+	if err != nil {
+		return nil, err
+	}
+	codigos := make([]int, 0, len(lotes))
+	for _, l := range lotes {
+		codigos = append(codigos, l.CodigoSucursalSin)
+	}
+	permitidos, err := codigosSucursalPermitidos(s.usuarioService, usuarioID, codigos)
+	if err != nil {
+		return nil, err
+	}
+	visibles := make([]repositories.LoteResumenAnulacion, 0, len(lotes))
+	for _, l := range lotes {
+		if permitidos[l.CodigoSucursalSin] {
+			visibles = append(visibles, l)
+		}
+	}
+	return visibles, nil
 }
 
 // GenerarPlantilla arma el .xlsx de ejemplo con las columnas que espera

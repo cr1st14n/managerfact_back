@@ -32,7 +32,10 @@ type FacturaPrevalorada struct {
 	FechaCompraBoleto time.Time `json:"fecha_compra_boleto" gorm:"not null"`
 	// TipoCambio es el tc vigente a la fecha de FechaCompraBoleto, tal cual
 	// viene del Excel — no se recalcula.
-	TipoCambio   float64   `json:"tipo_cambio" gorm:"not null"`
+	TipoCambio float64 `json:"tipo_cambio" gorm:"not null"`
+	// TotalBob = CostoDuaDolares * TipoCambio (2 decimales), calculado al
+	// importar — no viene del Excel. Es el monto que se envía al facturador.
+	TotalBob     float64   `json:"total_bob" gorm:"not null;default:0"`
 	FechaEmision time.Time `json:"fecha_emision" gorm:"not null"`
 
 	// Etapa 2: seguimiento de envío al facturador.

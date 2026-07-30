@@ -21,6 +21,11 @@ func NewFacturaAnulacionHandler(s *services.FacturaAnulacionService) *FacturaAnu
 // "archivo") junto con la sucursal_facturador_id y la observación elegidas
 // para todo el lote.
 func (h *FacturaAnulacionHandler) ImportarExcel(c *fiber.Ctx) error {
+	usuarioID, ok := usuarioIDDesdeContexto(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+	}
+
 	sucursalFacturadorID, err := strconv.ParseUint(c.FormValue("sucursal_facturador_id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "sucursal_facturador_id es requerido y debe ser numérico"})
@@ -42,8 +47,11 @@ func (h *FacturaAnulacionHandler) ImportarExcel(c *fiber.Ctx) error {
 	}
 	defer archivo.Close()
 
-	resultado, err := h.service.ImportarExcel(archivo, uint(sucursalFacturadorID), observacion)
+	resultado, err := h.service.ImportarExcel(usuarioID, archivo, uint(sucursalFacturadorID), observacion)
 	if err != nil {
+		if errors.Is(err, services.ErrSinPermisoSucursal) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": err.Error()})
+		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Error importando el Excel", "error": err.Error()})
 	}
 
@@ -54,10 +62,15 @@ func (h *FacturaAnulacionHandler) ImportarExcel(c *fiber.Ctx) error {
 }
 
 func (h *FacturaAnulacionHandler) GetAll(c *fiber.Ctx) error {
+	usuarioID, ok := usuarioIDDesdeContexto(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+	}
+
 	estado := c.Query("estado")
 	loteID := c.Query("lote_id")
 
-	facturas, err := h.service.ListarTodos(estado, loteID)
+	facturas, err := h.service.ListarTodos(usuarioID, estado, loteID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error obteniendo facturas de anulación", "error": err.Error()})
 	}
@@ -66,9 +79,15 @@ func (h *FacturaAnulacionHandler) GetAll(c *fiber.Ctx) error {
 
 // GetLotes lista el registro de lotes de importación de anulaciones: con qué
 // sucursal facturador y observación se cargó cada uno, y el desglose de
-// estados de envío.
+// estados de envío. Solo incluye lotes de sucursales permitidas para el
+// usuario autenticado.
 func (h *FacturaAnulacionHandler) GetLotes(c *fiber.Ctx) error {
-	lotes, err := h.service.ListarLotes()
+	usuarioID, ok := usuarioIDDesdeContexto(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+	}
+
+	lotes, err := h.service.ListarLotes(usuarioID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error obteniendo lotes", "error": err.Error()})
 	}
@@ -88,23 +107,46 @@ func (h *FacturaAnulacionHandler) DescargarPlantilla(c *fiber.Ctx) error {
 }
 
 func (h *FacturaAnulacionHandler) GetByID(c *fiber.Ctx) error {
+	usuarioID, ok := usuarioIDDesdeContexto(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+	}
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "ID inválido"})
 	}
-	factura, err := h.service.ObtenerPorID(uint(id))
+	factura, err := h.service.ObtenerPorID(usuarioID, uint(id))
 	if err != nil {
+		if errors.Is(err, services.ErrSinPermisoSucursal) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": err.Error()})
+		}
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Factura de anulación no encontrada", "error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"message": "Factura de anulación encontrada", "data": factura})
 }
 
 // Anular dispara el envío síncrono de una solicitud de anulación al
-// facturador de su sucursal (etapa 2 del flujo).
+// facturador de su sucursal (etapa 2 del flujo). Antes de enviar, exige que
+// el usuario tenga permiso sobre la sucursal de esta anulación — mismo
+// control que GetByID, para que no se pueda anular por ID una factura de
+// una sucursal fuera de las permitidas.
 func (h *FacturaAnulacionHandler) Anular(c *fiber.Ctx) error {
+	usuarioID, ok := usuarioIDDesdeContexto(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+	}
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "ID inválido"})
+	}
+
+	if _, err := h.service.ObtenerPorID(usuarioID, uint(id)); err != nil {
+		if errors.Is(err, services.ErrSinPermisoSucursal) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": err.Error()})
+		}
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Factura de anulación no encontrada", "error": err.Error()})
 	}
 
 	factura, err := h.service.Anular(uint(id), "manual")
