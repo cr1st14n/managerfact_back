@@ -151,20 +151,15 @@ func SeedDatabase(db *gorm.DB) error {
 }
 
 // SeedRegionalesYSucursales siembra el catálogo de regionales y sucursales
-// (transcrito de doc/sucursales.md) si todavía no existen datos. Pendiente
-// de validar contra SFE_SUCURSAL en producción, tal como advierte el propio
-// documento de origen.
+// (transcrito de doc/sucursales.md). Corre en cada arranque y usa
+// FirstOrCreate por cada regional (por nombre, único) y cada sucursal (por
+// codigo_sucursal_sin, único) en vez de saltarse todo si ya hay datos: así,
+// si se agrega una sucursal nueva a este catálogo más adelante (como pasó
+// con el código 0 "Oficina Central"), el próximo reinicio la crea sola sin
+// duplicar ni tocar las que ya existen. Pendiente de validar contra
+// SFE_SUCURSAL en producción, tal como advierte el propio documento de
+// origen.
 func SeedRegionalesYSucursales(db *gorm.DB) error {
-	var count int64
-	if err := db.Model(&models.Regional{}).Count(&count).Error; err != nil {
-		return fmt.Errorf("error verificando regionales existentes: %v", err)
-	}
-	if count > 0 {
-		return nil
-	}
-
-	log.Println("No se encontraron regionales, sembrando catálogo desde doc/sucursales.md...")
-
 	type sucursalSeed struct {
 		Codigo int
 		Nombre string
@@ -200,7 +195,7 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 
 	for _, nombreRegional := range ordenRegionales {
 		regional := models.Regional{Nombre: nombreRegional}
-		if err := db.Create(&regional).Error; err != nil {
+		if err := db.Where(models.Regional{Nombre: nombreRegional}).FirstOrCreate(&regional).Error; err != nil {
 			return fmt.Errorf("error creando regional %s: %v", nombreRegional, err)
 		}
 		for _, s := range sucursalesPorRegional[nombreRegional] {
@@ -209,13 +204,17 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 				Nombre:            s.Nombre,
 				RegionalID:        regional.ID,
 			}
-			if err := db.Create(&sucursal).Error; err != nil {
+			// Condición como string+args (no struct): un Where con struct
+			// omite los campos en su valor cero, y codigo_sucursal_sin=0
+			// ("Oficina Central") es justamente ese caso — con struct nunca
+			// se filtraría por código y quedaría sin sembrar.
+			if err := db.Where("codigo_sucursal_sin = ?", s.Codigo).FirstOrCreate(&sucursal).Error; err != nil {
 				return fmt.Errorf("error creando sucursal %s: %v", s.Nombre, err)
 			}
 		}
 	}
 
-	log.Println("Catálogo de regionales y sucursales sembrado exitosamente")
+	log.Println("Catálogo de regionales y sucursales verificado/completado")
 	return nil
 }
 

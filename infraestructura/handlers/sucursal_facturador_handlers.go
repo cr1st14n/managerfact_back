@@ -18,8 +18,11 @@ func NewSucursalFacturadorHandler(s *services.SucursalFacturadorService) *Sucurs
 }
 
 type sucursalFacturadorRequest struct {
-	Nombre            string `json:"nombre"`
-	CodigoSucursalSin int    `json:"codigo_sucursal_sin"`
+	Nombre string `json:"nombre"`
+	// CodigoSucursalSin es *int (no int) porque 0 es un código SIN válido
+	// ("Oficina Central") — así se distingue "no vino en el request" (nil)
+	// de "vino como 0" al validar, en vez de tratar 0 como campo vacío.
+	CodigoSucursalSin *int   `json:"codigo_sucursal_sin"`
 	PuntoVentaEmisor  string `json:"punto_venta_emisor"`
 	UrlLinkFacturador string `json:"url_link_facturador"`
 	// TokenAcceso solo es requerido al crear. Al actualizar, vacío significa
@@ -59,7 +62,7 @@ func (h *SucursalFacturadorHandler) validarCreate(req *sucursalFacturadorRequest
 	req.UrlLinkFacturador = utils.ValidarCampoRequerido(&errValidacion, req.UrlLinkFacturador, "El campo url_link_facturador es requerido")
 	req.TokenAcceso = utils.ValidarCampoRequerido(&errValidacion, req.TokenAcceso, "El campo token_acceso es requerido")
 	req.CodigoNit = utils.ValidarCampoRequerido(&errValidacion, req.CodigoNit, "El campo codigo_nit es requerido")
-	if req.CodigoSucursalSin == 0 {
+	if req.CodigoSucursalSin == nil {
 		errValidacion = append(errValidacion, "El campo codigo_sucursal_sin es requerido")
 	}
 	req.PuntoVentaEmisor = utils.ValidarCampoOpcional(&errValidacion, req.PuntoVentaEmisor)
@@ -73,7 +76,7 @@ func (h *SucursalFacturadorHandler) validarUpdate(req *sucursalFacturadorRequest
 	req.Nombre = utils.ValidarCampoRequerido(&errValidacion, req.Nombre, "El campo nombre es requerido")
 	req.UrlLinkFacturador = utils.ValidarCampoRequerido(&errValidacion, req.UrlLinkFacturador, "El campo url_link_facturador es requerido")
 	req.CodigoNit = utils.ValidarCampoRequerido(&errValidacion, req.CodigoNit, "El campo codigo_nit es requerido")
-	if req.CodigoSucursalSin == 0 {
+	if req.CodigoSucursalSin == nil {
 		errValidacion = append(errValidacion, "El campo codigo_sucursal_sin es requerido")
 	}
 	req.PuntoVentaEmisor = utils.ValidarCampoOpcional(&errValidacion, req.PuntoVentaEmisor)
@@ -95,7 +98,7 @@ func (h *SucursalFacturadorHandler) Create(c *fiber.Ctx) error {
 
 	sucursal, err := h.service.Crear(services.CrearSucursalFacturadorInput{
 		Nombre:            req.Nombre,
-		CodigoSucursalSin: req.CodigoSucursalSin,
+		CodigoSucursalSin: *req.CodigoSucursalSin,
 		PuntoVentaEmisor:  req.PuntoVentaEmisor,
 		UrlLinkFacturador: req.UrlLinkFacturador,
 		TokenAcceso:       req.TokenAcceso,
@@ -136,7 +139,7 @@ func (h *SucursalFacturadorHandler) Update(c *fiber.Ctx) error {
 	sucursal, err := h.service.Actualizar(services.ActualizarSucursalFacturadorInput{
 		ID:                uint(id),
 		Nombre:            req.Nombre,
-		CodigoSucursalSin: req.CodigoSucursalSin,
+		CodigoSucursalSin: *req.CodigoSucursalSin,
 		PuntoVentaEmisor:  req.PuntoVentaEmisor,
 		UrlLinkFacturador: req.UrlLinkFacturador,
 		TokenAcceso:       req.TokenAcceso,
