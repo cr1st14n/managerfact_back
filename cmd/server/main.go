@@ -77,8 +77,55 @@ func InitDatabase(config *Config) *gorm.DB {
 	return db
 }
 
+// MigrarFechasPrevaloradaADate convierte fecha_emision/fecha_compra_boleto
+// de facturas_prevaloradas de timestamptz (el default que le daba GORM a
+// time.Time) a date: son fechas de calendario puras que vienen del Excel,
+// sin hora. Con timestamptz y la sesión en America/La_Paz (UTC-4, ver
+// InitDatabase), una fecha guardada como medianoche se leía un día para
+// atrás. Corre antes de AutoMigrate y solo si la columna todavía es
+// timestamptz (no-op en instalaciones nuevas, donde AutoMigrate crea la
+// tabla directo con date).
+//
+// El cast usa "AT TIME ZONE 'UTC'", no la zona de la sesión: las fechas ya
+// guardadas se parsearon siempre como medianoche UTC (ver parsearFecha en
+// aplication/services/factura_prevalorada_service.go), así que extraer la
+// fecha en UTC recupera el valor original tal cual se importó. Un
+// "ALTER COLUMN TYPE date" sin USING dejaría que Postgres use su cast
+// implícito timestamptz->date, que sí usa la zona de la sesión — y
+// corrompería en la migración misma los datos ya importados con el mismo
+// corrimiento que se está arreglando.
+func MigrarFechasPrevaloradaADate(db *gorm.DB) error {
+	var tipoActual string
+	err := db.Raw(`
+		SELECT data_type FROM information_schema.columns
+		WHERE table_name = 'facturas_prevaloradas' AND column_name = 'fecha_emision'
+	`).Scan(&tipoActual).Error
+	if err != nil {
+		return fmt.Errorf("error verificando tipo de fecha_emision: %v", err)
+	}
+	if tipoActual != "timestamp with time zone" {
+		return nil
+	}
+
+	log.Println("Migrando fecha_emision/fecha_compra_boleto de facturas_prevaloradas a date (evitando el corrimiento de un día)...")
+	err = db.Exec(`
+		ALTER TABLE facturas_prevaloradas
+			ALTER COLUMN fecha_emision TYPE date USING (fecha_emision AT TIME ZONE 'UTC')::date,
+			ALTER COLUMN fecha_compra_boleto TYPE date USING (fecha_compra_boleto AT TIME ZONE 'UTC')::date
+	`).Error
+	if err != nil {
+		return fmt.Errorf("error migrando fechas de facturas_prevaloradas a date: %v", err)
+	}
+	log.Println("Migración de fechas a date completada")
+	return nil
+}
+
 // AutoMigrate ejecuta las migraciones automáticas
 func AutoMigrate(db *gorm.DB) error {
+	if err := MigrarFechasPrevaloradaADate(db); err != nil {
+		return err
+	}
+
 	log.Println("Ejecutando migraciones automáticas...")
 
 	err := db.AutoMigrate(

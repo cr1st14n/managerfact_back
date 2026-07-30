@@ -26,17 +26,23 @@ type FacturaPrevalorada struct {
 	Observacion string `json:"observacion" gorm:"type:varchar(255);not null"`
 
 	// Etapa 1: datos importados del Excel/lista de boletos.
-	Detalle           string    `json:"detalle" gorm:"type:varchar(255);not null"`
-	CodigoProducto    string    `json:"codigo_producto" gorm:"type:varchar(30);not null"`
-	CostoDuaDolares   float64   `json:"costo_dua_dolares" gorm:"not null"`
-	FechaCompraBoleto time.Time `json:"fecha_compra_boleto" gorm:"not null"`
+	Detalle         string  `json:"detalle" gorm:"type:varchar(255);not null"`
+	CodigoProducto  string  `json:"codigo_producto" gorm:"type:varchar(30);not null"`
+	CostoDuaDolares float64 `json:"costo_dua_dolares" gorm:"not null"`
+	// FechaCompraBoleto y FechaEmision son fechas de calendario puras (sin
+	// hora, vienen del Excel) — gorm:"type:date" en vez del timestamptz por
+	// defecto: la sesión de la conexión corre en America/La_Paz (UTC-4, ver
+	// InitDatabase), y con timestamptz una fecha guardada como medianoche
+	// corría un día para atrás al leerla de vuelta en esa zona. date no
+	// tiene noción de huso horario, así que no hay corrimiento posible.
+	FechaCompraBoleto time.Time `json:"fecha_compra_boleto" gorm:"type:date;not null"`
 	// TipoCambio es el tc vigente a la fecha de FechaCompraBoleto, tal cual
 	// viene del Excel — no se recalcula.
 	TipoCambio float64 `json:"tipo_cambio" gorm:"not null"`
 	// TotalBob = CostoDuaDolares * TipoCambio (2 decimales), calculado al
 	// importar — no viene del Excel. Es el monto que se envía al facturador.
 	TotalBob     float64   `json:"total_bob" gorm:"not null;default:0"`
-	FechaEmision time.Time `json:"fecha_emision" gorm:"not null"`
+	FechaEmision time.Time `json:"fecha_emision" gorm:"type:date;not null"`
 
 	// Etapa 2: seguimiento de envío al facturador.
 	Estado           string     `json:"estado" gorm:"type:varchar(20);not null;default:'pendiente';index"`
