@@ -38,6 +38,6 @@ func (h *LogEnvioHandler) GetAll(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Logs de envío obtenidos exitosamente", "data": logs})
 }
 
-func (h *LogEnvioHandler) RegisterRoutes(router fiber.Router) {
-	router.Get("/logs-envio", h.GetAll)
+func (h *LogEnvioHandler) RegisterRoutes(router fiber.Router, requireNoConsultas fiber.Handler) {
+	router.Get("/logs-envio", requireNoConsultas, h.GetAll)
 }

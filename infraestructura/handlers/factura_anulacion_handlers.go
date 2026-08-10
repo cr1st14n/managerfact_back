@@ -164,8 +164,8 @@ func (h *FacturaAnulacionHandler) Anular(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Anulación enviada al facturador", "data": factura})
 }
 
-func (h *FacturaAnulacionHandler) RegisterRoutes(router fiber.Router) {
-	facturas := router.Group("/facturas-anulacion")
+func (h *FacturaAnulacionHandler) RegisterRoutes(router fiber.Router, requireNoConsultas fiber.Handler) {
+	facturas := router.Group("/facturas-anulacion", requireNoConsultas)
 	facturas.Post("/importar-excel", h.ImportarExcel)
 	facturas.Post("/:id/anular", h.Anular)
 	facturas.Get("/plantilla", h.DescargarPlantilla)

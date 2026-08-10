@@ -330,22 +330,33 @@ func SetupRoutes(
 	// protegidas, no solo a estas dos.
 	requireAdmin := middleware.RequireAdmin(usuarioService)
 
-	// Registrar rutas de conexiones de BD
-	dbConnectionHandler.RegisterRoutes(protegido)
+	// El rol "consultas" solo puede ver Reportes y DUAS Monitor (rutas de
+	// consultasHandler) y sus dependencias de solo lectura (codigoproducto,
+	// listado de conexiones). Se bloquea con requireNoConsultas: Facturación
+	// completa (prevaloradas/anulación/logs), Sucursales Facturador, y la
+	// escritura de Conexiones. Igual que requireAdmin, se pasa directo a
+	// cada RegisterRoutes para quedar scopeado a sus propios prefijos.
+	requireNoConsultas := middleware.RequireNoConsultas(usuarioService)
+
+	// Registrar rutas de conexiones de BD (el listado queda abierto a
+	// "consultas" porque Reportes/DUAS Monitor lo necesitan para elegir la
+	// base; crear/editar/eliminar/test quedan bloqueados a ese rol)
+	dbConnectionHandler.RegisterRoutes(protegido, requireNoConsultas)
 	// Registrar rutas de consultas
 	consultasHandler.RegisterRoutes(protegido)
 	// Registrar rutas de codigo producto
 	codigoProductoHandler.RegisterRoutes(protegido)
 	// Registrar rutas de usuarios/regionales/catálogo de sucursales (solo admin)
 	usuarioHandler.RegisterRoutes(protegido, requireAdmin)
-	// Registrar rutas de sucursales facturador (FacturaClic) (solo admin)
-	sucursalFacturadorHandler.RegisterRoutes(protegido, requireAdmin)
-	// Registrar rutas de facturas prevaloradas (boletos)
-	facturaPrevaloradaHandler.RegisterRoutes(protegido)
-	// Registrar rutas de facturas de anulación
-	facturaAnulacionHandler.RegisterRoutes(protegido)
-	// Registrar rutas de logs de envío
-	logEnvioHandler.RegisterRoutes(protegido)
+	// Registrar rutas de sucursales facturador (FacturaClic) (solo admin,
+	// y bloqueado por completo a "consultas")
+	sucursalFacturadorHandler.RegisterRoutes(protegido, requireAdmin, requireNoConsultas)
+	// Registrar rutas de facturas prevaloradas (boletos) (bloqueado a "consultas")
+	facturaPrevaloradaHandler.RegisterRoutes(protegido, requireNoConsultas)
+	// Registrar rutas de facturas de anulación (bloqueado a "consultas")
+	facturaAnulacionHandler.RegisterRoutes(protegido, requireNoConsultas)
+	// Registrar rutas de logs de envío (bloqueado a "consultas")
+	logEnvioHandler.RegisterRoutes(protegido, requireNoConsultas)
 }
 
 func main() {
@@ -386,7 +397,7 @@ func main() {
 
 	// Iniciar consultas
 	consultasRepositori := repositories.NewConsutasRepository(db)
-	consultaHandler := services.NewConsultasService(consultasRepositori)
+	consultaHandler := services.NewConsultasService(consultasRepositori, usuarioRepo)
 	consultasHandler := handlers.NewConsultasHandler(consultaHandler, usuarioService)
 
 	// codigo producto

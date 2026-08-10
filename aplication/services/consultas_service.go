@@ -23,11 +23,13 @@ func toNullString(s string) any {
 
 type ConsultasService struct {
 	ConsultasRepo repositories.ConsutasRepository
+	UsuariosRepo  repositories.UsuarioRepository
 }
 
-func NewConsultasService(r *repositories.ConsutasRepository) *ConsultasService {
+func NewConsultasService(r *repositories.ConsutasRepository, u *repositories.UsuarioRepository) *ConsultasService {
 	return &ConsultasService{
 		ConsultasRepo: *r,
+		UsuariosRepo:  *u,
 	}
 }
 
@@ -126,6 +128,7 @@ ORDER BY sdf.created_date DESC;
 `
 
 func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]models.SFEReporteFacturador, error) {
+
 	idServer, err := strconv.ParseInt(data.IdFacturador, 10, 64)
 	if err != nil {
 		return nil, err
@@ -246,9 +249,9 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 		return nil, fmt.Errorf("error al buscar facturas: %w", err)
 	}
 
-	if len(facturas) == 0 {
-		return nil, fmt.Errorf("no se encontraron facturas")
-	}
+	// if len(facturas) == 0 {
+	// 	return nil, fmt.Errorf("no se encontraron facturas")
+	// }
 
 	return &facturas, nil
 }

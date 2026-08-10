@@ -54,3 +54,26 @@ func RequireAdmin(usuarioService *services.UsuarioService) fiber.Handler {
 		return c.Next()
 	}
 }
+
+// RequireNoConsultas bloquea el acceso a usuarios con rol "consultas" (rol de
+// solo lectura, limitado a Reportes y DUAS Monitor). Usado para proteger
+// Facturación (prevaloradas, anulación, logs de envío), Sucursales
+// Facturador y la escritura de Conexiones — módulos que este rol no debe ver
+// ni operar.
+func RequireNoConsultas(usuarioService *services.UsuarioService) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		usuarioID, ok := c.Locals(UsuarioIDLocal).(uint)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Sesión inválida"})
+		}
+
+		esConsultas, err := usuarioService.EsConsultas(usuarioID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error verificando permisos", "error": err.Error()})
+		}
+		if esConsultas {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "No tienes permiso para acceder a este módulo"})
+		}
+		return c.Next()
+	}
+}

@@ -49,9 +49,13 @@ type Usuario struct {
 	SucursalID    *uint             `json:"sucursal_id"`
 	Sucursal      *SucursalCatalogo `json:"sucursal,omitempty" gorm:"foreignKey:SucursalID"`
 	IsActive      bool              `json:"is_active" gorm:"default:true"`
-	// Rol controla qué módulos puede usar: "admin" ve y opera todo; "operador"
-	// no puede ver ni operar los módulos de Usuarios ni Sucursales Facturador
-	// (ver middleware.RequireAdmin y RequireAdmin.tsx en el front).
+	// Rol controla qué módulos puede usar: "admin" ve y opera todo;
+	// "operador" no puede ver ni operar los módulos de Usuarios ni
+	// Sucursales Facturador (ver middleware.RequireAdmin y RequireAdmin.tsx
+	// en el front); "consultas" solo puede ver Reportes y DUAS Monitor
+	// (filtrado a sus SucursalesPermitidasCodigos), sin acceso a Facturación
+	// ni a ningún otro módulo (ver middleware.RequireNoConsultas y
+	// RequireNoConsultas.tsx en el front).
 	Rol string `json:"rol" gorm:"type:varchar(20);not null;default:'operador'"`
 	// AccesoTotal otorga acceso a todas las sucursales sin importar
 	// SucursalesPermitidasCodigos.
@@ -74,6 +78,7 @@ type Usuario struct {
 func (Usuario) TableName() string { return "usuarios" }
 
 const (
-	RolAdmin    = "admin"
-	RolOperador = "operador"
+	RolAdmin     = "admin"
+	RolOperador  = "operador"
+	RolConsultas = "consultas"
 )

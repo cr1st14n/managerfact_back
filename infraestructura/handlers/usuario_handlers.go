@@ -34,8 +34,8 @@ func (h *UsuarioHandler) validar(req *usuarioRequest) []string {
 	req.CI = utils.ValidarCampoRequerido(&errValidacion, req.CI, "El campo ci es requerido")
 	req.CodigoUsuario = utils.ValidarCampoRequerido(&errValidacion, req.CodigoUsuario, "El campo codigo_usuario es requerido")
 	req.Cargo = utils.ValidarCampoOpcional(&errValidacion, req.Cargo)
-	if req.Rol != models.RolAdmin && req.Rol != models.RolOperador {
-		errValidacion = append(errValidacion, "El campo rol debe ser 'admin' u 'operador'")
+	if req.Rol != models.RolAdmin && req.Rol != models.RolOperador && req.Rol != models.RolConsultas {
+		errValidacion = append(errValidacion, "El campo rol debe ser 'admin', 'operador' o 'consultas'")
 	}
 	return errValidacion
 }

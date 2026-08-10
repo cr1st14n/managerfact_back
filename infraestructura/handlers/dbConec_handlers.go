@@ -420,18 +420,22 @@ func (h *DbConnectionHandler) GetConnectionsStats(c *fiber.Ctx) error {
 	})
 }
 
-// RegisterRoutes registra todas las rutas del handler
-func (h *DbConnectionHandler) RegisterRoutes(router fiber.Router) {
+// RegisterRoutes registra todas las rutas del handler. El listado (GET)
+// queda abierto a cualquier autenticado, incluido el rol "consultas", que lo
+// necesita para elegir la base antes de consultar Reportes/DUAS Monitor;
+// crear/editar/eliminar/test quedan bloqueados a ese rol con
+// requireNoConsultas.
+func (h *DbConnectionHandler) RegisterRoutes(router fiber.Router, requireNoConsultas fiber.Handler) {
 	connections := router.Group("/connections")
 
-	connections.Post("/", h.CreateConnection)
+	connections.Post("/", requireNoConsultas, h.CreateConnection)
 	connections.Get("/", h.GetAllConnections)
 	connections.Get("/paginated", h.GetConnectionsPaginated)
 	connections.Get("/stats", h.GetConnectionsStats)
 	connections.Get("/:id", h.GetConnection)
-	connections.Put("/:id", h.UpdateConnection)
-	connections.Delete("/:id", h.DeleteConnection)
-	connections.Patch("/:id/soft-delete", h.SoftDeleteConnection)
-	connections.Post("/:id/test", h.TestConnection)
-	connections.Post("/test", h.TestConnectionByConfig)
+	connections.Put("/:id", requireNoConsultas, h.UpdateConnection)
+	connections.Delete("/:id", requireNoConsultas, h.DeleteConnection)
+	connections.Patch("/:id/soft-delete", requireNoConsultas, h.SoftDeleteConnection)
+	connections.Post("/:id/test", requireNoConsultas, h.TestConnection)
+	connections.Post("/test", requireNoConsultas, h.TestConnectionByConfig)
 }

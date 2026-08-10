@@ -191,8 +191,8 @@ func (h *SucursalFacturadorHandler) Delete(c *fiber.Ctx) error {
 // elegir la sucursal antes de importar un Excel); crear/editar/eliminar y
 // GetByID siguen detrás de requireAdmin — los operadores no pueden operar
 // este módulo, solo consultar el listado.
-func (h *SucursalFacturadorHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
-	sucursales := router.Group("/sucursales-facturador")
+func (h *SucursalFacturadorHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler, requireNoConsultas fiber.Handler) {
+	sucursales := router.Group("/sucursales-facturador", requireNoConsultas)
 	sucursales.Get("/", h.GetAll)
 
 	admin := sucursales.Group("/", requireAdmin)

@@ -171,8 +171,8 @@ func (h *FacturaPrevaloradaHandler) Facturar(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Factura enviada al facturador", "data": factura})
 }
 
-func (h *FacturaPrevaloradaHandler) RegisterRoutes(router fiber.Router) {
-	facturas := router.Group("/facturas-prevaloradas")
+func (h *FacturaPrevaloradaHandler) RegisterRoutes(router fiber.Router, requireNoConsultas fiber.Handler) {
+	facturas := router.Group("/facturas-prevaloradas", requireNoConsultas)
 	facturas.Post("/importar-excel", h.ImportarExcel)
 	facturas.Post("/:id/facturar", h.Facturar)
 	facturas.Get("/plantilla", h.DescargarPlantilla)

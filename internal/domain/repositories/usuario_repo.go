@@ -277,6 +277,18 @@ func (r *UsuarioRepository) EsAdmin(usuarioID uint) (bool, error) {
 	return usuario.Rol == models.RolAdmin, nil
 }
 
+// EsConsultas indica si el usuario tiene rol "consultas" — usado por
+// middleware.RequireNoConsultas para bloquear los módulos de Facturación,
+// Sucursales Facturador y la escritura de Conexiones a este rol, que solo
+// puede consultar Reportes y DUAS Monitor.
+func (r *UsuarioRepository) EsConsultas(usuarioID uint) (bool, error) {
+	usuario, err := r.GetByID(usuarioID)
+	if err != nil {
+		return false, err
+	}
+	return usuario.Rol == models.RolConsultas, nil
+}
+
 // TieneAccesoTotal indica si el usuario tiene acceso nacional (bypass de
 // sucursales_permitidas_codigos).
 func (r *UsuarioRepository) TieneAccesoTotal(usuarioID uint) (bool, error) {

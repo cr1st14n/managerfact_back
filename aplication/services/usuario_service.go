@@ -165,6 +165,11 @@ func (s *UsuarioService) EsAdmin(usuarioID uint) (bool, error) {
 	return s.repo.EsAdmin(usuarioID)
 }
 
+// EsConsultas indica si el usuario tiene rol "consultas".
+func (s *UsuarioService) EsConsultas(usuarioID uint) (bool, error) {
+	return s.repo.EsConsultas(usuarioID)
+}
+
 // ErrCredencialesInvalidas se devuelve cuando el código de usuario no existe,
 // la contraseña no coincide, o el usuario está inactivo — mismo mensaje
 // genérico en los 3 casos para no filtrar cuáles códigos de usuario existen.
