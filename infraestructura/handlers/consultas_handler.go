@@ -7,6 +7,7 @@ import (
 	"managerfact/internal/domain/models"
 	"managerfact/pkg/utils"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -180,10 +181,46 @@ func (h *ConsultasHandler) BuscarDuas(c *fiber.Ctx) error {
 	})
 }
 
+// FacturasMes devuelve las facturas verificadas de un mes para una sucursal y
+// un código de producto (base de la descarga mensual a Excel).
+func (h *ConsultasHandler) FacturasMes(c *fiber.Ctx) error {
+	idServer, errSrv := strconv.ParseInt(c.Query("idServer"), 10, 64)
+	idSucursal, errSuc := strconv.Atoi(c.Query("sucursal"))
+	codigoSin := c.Query("codigoSucursalSin")
+	codigoSinInt, errSin := strconv.Atoi(codigoSin)
+	producto := strings.TrimSpace(c.Query("codigoProducto"))
+	anio, errAnio := strconv.Atoi(c.Query("anio"))
+	mes, errMes := strconv.Atoi(c.Query("mes"))
+
+	if errSrv != nil || errSuc != nil || errSin != nil || producto == "" ||
+		errAnio != nil || errMes != nil || mes < 1 || mes > 12 || anio < 2000 || anio > 2100 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Parámetros requeridos: idServer, sucursal, codigoSucursalSin, codigoProducto, anio, mes",
+		})
+	}
+
+	if !h.verificarAccesoSucursal(c, codigoSin) {
+		return nil
+	}
+
+	data, err := h.ConsultasService.FacturasMes(idServer, idSucursal, codigoSinInt, producto, anio, mes)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Error de consulta",
+			"error":   err.Error(),
+		})
+	}
+	return c.JSON(fiber.Map{
+		"message": "Facturas del mes",
+		"data":    data,
+	})
+}
+
 func (h *ConsultasHandler) RegisterRoutes(router fiber.Router) {
 	connections := router.Group("/consultar")
 
 	connections.Post("/", h.DataFacturas)
 	connections.Get("/sucursales", h.Sucursales)
 	connections.Get("/duas", h.BuscarDuas)
+	connections.Get("/facturas-mes", h.FacturasMes)
 }

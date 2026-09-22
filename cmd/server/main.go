@@ -131,6 +131,7 @@ func AutoMigrate(db *gorm.DB) error {
 	err := db.AutoMigrate(
 		&models.DbConnection{},
 		&models.Codigo_producto{},
+		&models.ConexionSucursal{},
 		&models.Regional{},
 		&models.SucursalCatalogo{},
 		&models.Usuario{},
@@ -273,11 +274,13 @@ func SetupRoutes(
 	dbConnectionHandler *handlers.DbConnectionHandler,
 	consultasHandler *handlers.ConsultasHandler,
 	codigoProductoHandler *handlers.CodigoProductoHandler,
+	conexionSucursalHandler *handlers.ConexionSucursalHandler,
 	usuarioHandler *handlers.UsuarioHandler,
 	sucursalFacturadorHandler *handlers.SucursalFacturadorHandler,
 	facturaPrevaloradaHandler *handlers.FacturaPrevaloradaHandler,
 	facturaAnulacionHandler *handlers.FacturaAnulacionHandler,
 	logEnvioHandler *handlers.LogEnvioHandler,
+	resumenContableHandler *handlers.ResumenContableHandler,
 ) {
 	// Middleware global
 	app.Use(logger.New(logger.Config{
@@ -339,13 +342,19 @@ func SetupRoutes(
 	requireNoConsultas := middleware.RequireNoConsultas(usuarioService)
 
 	// Registrar rutas de conexiones de BD (el listado queda abierto a
-	// "consultas" porque Reportes/DUAS Monitor lo necesitan para elegir la
-	// base; crear/editar/eliminar/test quedan bloqueados a ese rol)
-	dbConnectionHandler.RegisterRoutes(protegido, requireNoConsultas)
+	// cualquier autenticado porque Reportes/DUAS Monitor lo necesitan para
+	// elegir la base; el resto de la gestión es solo admin)
+	dbConnectionHandler.RegisterRoutes(protegido, requireAdmin)
+	// Copia local de sucursales por conexión (actualizar/resumen, solo admin)
+	conexionSucursalHandler.RegisterRoutes(protegido, requireAdmin)
 	// Registrar rutas de consultas
 	consultasHandler.RegisterRoutes(protegido)
-	// Registrar rutas de codigo producto
-	codigoProductoHandler.RegisterRoutes(protegido)
+	// Registrar rutas de resumen contable (Libro Ventas IVA y lo que se
+	// agregue después de ClicReportes.md); mismo acceso que consultas, cada
+	// reporte exige acceso total puertas adentro porque junta sucursales.
+	resumenContableHandler.RegisterRoutes(protegido)
+	// Registrar rutas de codigo producto (listado abierto, gestión solo admin)
+	codigoProductoHandler.RegisterRoutes(protegido, requireAdmin)
 	// Registrar rutas de usuarios/regionales/catálogo de sucursales (solo admin)
 	usuarioHandler.RegisterRoutes(protegido, requireAdmin)
 	// Registrar rutas de sucursales facturador (FacturaClic) (solo admin,
@@ -397,8 +406,15 @@ func main() {
 
 	// Iniciar consultas
 	consultasRepositori := repositories.NewConsutasRepository(db)
-	consultaHandler := services.NewConsultasService(consultasRepositori, usuarioRepo)
+	conexionSucursalRepo := repositories.NewConexionSucursalRepo(db)
+	conexionSucursalService := services.NewConexionSucursalService(dbConnectionRepo, conexionSucursalRepo)
+	conexionSucursalHandler := handlers.NewConexionSucursalHandler(conexionSucursalService)
+	consultaHandler := services.NewConsultasService(consultasRepositori, usuarioRepo, conexionSucursalRepo)
 	consultasHandler := handlers.NewConsultasHandler(consultaHandler, usuarioService)
+
+	// resumen contable (Libro Ventas IVA es el primer reporte del módulo)
+	resumenContableService := services.NewResumenContableService(consultasRepositori)
+	resumenContableHandler := handlers.NewResumenContableHandler(resumenContableService, usuarioService)
 
 	// codigo producto
 	codigoProductoRepo := repositories.NewCodigoProductoRepoRepo(db)
@@ -447,7 +463,7 @@ func main() {
 	})
 
 	// Configurar rutas
-	SetupRoutes(app, authHandler, usuarioService, dbConnectionHandler, consultasHandler, codigoProductoHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler, logEnvioHandler)
+	SetupRoutes(app, authHandler, usuarioService, dbConnectionHandler, consultasHandler, codigoProductoHandler, conexionSucursalHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler, logEnvioHandler, resumenContableHandler)
 
 	// Iniciar servidor
 	port := ":" + config.ServerPort

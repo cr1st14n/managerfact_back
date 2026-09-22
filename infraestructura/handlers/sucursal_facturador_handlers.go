@@ -25,8 +25,8 @@ type sucursalFacturadorRequest struct {
 	CodigoSucursalSin *int   `json:"codigo_sucursal_sin"`
 	PuntoVentaEmisor  string `json:"punto_venta_emisor"`
 	UrlLinkFacturador string `json:"url_link_facturador"`
-	// TokenAcceso solo es requerido al crear. Al actualizar, vacío significa
-	// "no cambiar el token existente".
+	// TokenAcceso solo se lee al crear; en Update se ignora aunque venga en
+	// el body (el token no se puede modificar una vez registrado).
 	TokenAcceso     string `json:"token_acceso"`
 	CodigoMonedaBob string `json:"codigo_moneda_bob"`
 	CodigoCI        string `json:"codigo_ci"`
@@ -80,7 +80,6 @@ func (h *SucursalFacturadorHandler) validarUpdate(req *sucursalFacturadorRequest
 		errValidacion = append(errValidacion, "El campo codigo_sucursal_sin es requerido")
 	}
 	req.PuntoVentaEmisor = utils.ValidarCampoOpcional(&errValidacion, req.PuntoVentaEmisor)
-	req.TokenAcceso = utils.ValidarCampoOpcional(&errValidacion, req.TokenAcceso)
 	req.CodigoMonedaBob = utils.ValidarCampoOpcional(&errValidacion, req.CodigoMonedaBob)
 	req.CodigoCI = utils.ValidarCampoOpcional(&errValidacion, req.CodigoCI)
 	return errValidacion
@@ -142,7 +141,6 @@ func (h *SucursalFacturadorHandler) Update(c *fiber.Ctx) error {
 		CodigoSucursalSin: *req.CodigoSucursalSin,
 		PuntoVentaEmisor:  req.PuntoVentaEmisor,
 		UrlLinkFacturador: req.UrlLinkFacturador,
-		TokenAcceso:       req.TokenAcceso,
 		CodigoMonedaBob:   req.CodigoMonedaBob,
 		CodigoCI:          req.CodigoCI,
 		CodigoNit:         req.CodigoNit,

@@ -54,10 +54,8 @@ type ActualizarSucursalFacturadorInput struct {
 	CodigoSucursalSin int
 	PuntoVentaEmisor  string
 	UrlLinkFacturador string
-	// TokenAcceso solo se re-cifra y actualiza si viene con valor; el
-	// formulario de edición nunca recibe el token actual de vuelta (no se
-	// expone por la API), así que un campo vacío significa "no cambiar".
-	TokenAcceso     string
+	// Sin TokenAcceso a propósito: el token solo se envía al registrar la
+	// sucursal; editar nunca lo toca.
 	CodigoMonedaBob string
 	CodigoCI        string
 	CodigoNit       string
@@ -78,14 +76,6 @@ func (s *SucursalFacturadorService) Actualizar(input ActualizarSucursalFacturado
 	sucursal.CodigoCI = input.CodigoCI
 	sucursal.CodigoNit = input.CodigoNit
 	sucursal.Activo = input.Activo
-
-	if input.TokenAcceso != "" {
-		tokenCifrado, err := utils.Encrypt(input.TokenAcceso)
-		if err != nil {
-			return nil, err
-		}
-		sucursal.TokenAcceso = tokenCifrado
-	}
 
 	if err := s.repo.Update(sucursal); err != nil {
 		return nil, err

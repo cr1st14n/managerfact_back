@@ -22,14 +22,16 @@ func toNullString(s string) any {
 }
 
 type ConsultasService struct {
-	ConsultasRepo repositories.ConsutasRepository
-	UsuariosRepo  repositories.UsuarioRepository
+	ConsultasRepo   repositories.ConsutasRepository
+	UsuariosRepo    repositories.UsuarioRepository
+	SucursalesCache *repositories.ConexionSucursalRepo
 }
 
-func NewConsultasService(r *repositories.ConsutasRepository, u *repositories.UsuarioRepository) *ConsultasService {
+func NewConsultasService(r *repositories.ConsutasRepository, u *repositories.UsuarioRepository, sc *repositories.ConexionSucursalRepo) *ConsultasService {
 	return &ConsultasService{
-		ConsultasRepo: *r,
-		UsuariosRepo:  *u,
+		ConsultasRepo:   *r,
+		UsuariosRepo:    *u,
+		SucursalesCache: sc,
 	}
 }
 
@@ -99,7 +101,7 @@ SELECT
     sddf.sub_total,
     au.username                         AS usuario_creador
 
-FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
+FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf WITH (NOLOCK)
 JOIN FacturacionNaabol.dbo.sfe_detalle_documento_fiscal sddf
     ON sddf.id_sfe_documento_fiscal = sdf.id
 JOIN FacturacionNaabol.dbo.sfe_sucursal ss
@@ -138,13 +140,7 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 		return nil, errServer
 	}
 	// Construcción del DSN (Data Source Name) para SQL Server
-	dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s",
-		server.Username,
-		server.Password,
-		server.Host,
-		server.Port,
-		server.DatabaseName,
-	)
+	dsn := server.DSN()
 
 	var db *gorm.DB
 
@@ -269,13 +265,7 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 	}
 
 	// Construcción del DSN para SQL Server
-	dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s",
-		Server.Username,
-		Server.Password,
-		Server.Host,
-		Server.Port,
-		Server.DatabaseName,
-	)
+	dsn := Server.DSN()
 
 	db, err := gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -461,18 +451,24 @@ func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales
 	if err != nil {
 		return nil, err
 	}
+
+	// Primero la copia local (la que el admin actualiza desde /conexiones):
+	// evita conectarse a producción en cada selección. Si la conexión nunca
+	// se actualizó, o la lectura local falla, se cae a la consulta en vivo de
+	// siempre.
+	if cache, errCache := s.SucursalesCache.ListByConexion(uint(idServer_parse)); errCache != nil {
+		fmt.Printf("Error leyendo copia local de sucursales (conexión %d), se consulta en vivo: %v\n", idServer_parse, errCache)
+	} else if len(cache) > 0 {
+		sucursales := aSFESucursales(cache)
+		return &sucursales, nil
+	}
+
 	server, errServer := s.ConsultasRepo.GetServidorById(idServer_parse)
 	if errServer != nil {
 		return nil, errServer
 	}
 	// Construcción del DSN (Data Source Name) para SQL Server
-	dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s",
-		server.Username,
-		server.Password,
-		server.Host,
-		server.Port,
-		server.DatabaseName,
-	)
+	dsn := server.DSN()
 
 	var db *gorm.DB
 
@@ -503,4 +499,58 @@ func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales
 		return nil, errDataSuc
 	}
 	return &servidores, nil
+}
+
+// facturasMesQuery replica la consulta manual mensual: facturas VERIFICADAS de
+// una sucursal y un código de producto, filtradas por fecha_emision. Se une
+// con sfe_sucursal para exigir que el id de sucursal corresponda al
+// codigo_sucursal_sin sobre el que el handler validó el acceso del usuario.
+// Las tablas se leen WITH (NOLOCK) para no bloquear ni saturar la base de
+// producción del facturador (lectura sucia aceptable en un reporte histórico).
+const facturasMesQuery = `
+declare @Producto    varchar(20) = ?
+declare @IdSucursal  int         = ?
+declare @CodigoSin   int         = ?
+declare @FechaDesde  datetime2   = ?
+declare @FechaHasta  datetime2   = ?
+
+SELECT sdf.numero_factura, sdf.fecha_emision, sdf.cuf, sdf.cufd, sdf.monto_total,
+       sddf.codigo_producto_sfe, sddf.descripcion
+FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf WITH (NOLOCK)
+JOIN FacturacionNaabol.dbo.sfe_detalle_documento_fiscal sddf WITH (NOLOCK) ON sddf.id_sfe_documento_fiscal = sdf.id
+JOIN FacturacionNaabol.dbo.sfe_sucursal ss WITH (NOLOCK) ON ss.id = sdf.id_sfe_sucursal
+WHERE sddf.codigo_producto_sfe = @Producto
+  AND sdf.id_sfe_sucursal = @IdSucursal
+  AND ss.codigo_sucursal_sin = @CodigoSin
+  AND sdf.estado_documento_fiscal = 'VERIFICADO'
+  AND sdf.fecha_emision >= @FechaDesde AND sdf.fecha_emision < @FechaHasta
+ORDER BY sdf.fecha_emision ASC;
+`
+
+// FacturasMes devuelve las facturas verificadas del mes indicado (anio/mes).
+func (s *ConsultasService) FacturasMes(idServer int64, idSucursal, codigoSin int, producto string, anio, mes int) ([]models.FacturaMensual, error) {
+	server, err := s.ConsultasRepo.GetServidorById(idServer)
+	if err != nil {
+		return nil, err
+	}
+	dsn := server.DSN()
+
+	db, err := gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo conectar: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer sqlDB.Close()
+
+	desde := time.Date(anio, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
+	hasta := desde.AddDate(0, 1, 0)
+
+	var facturas []models.FacturaMensual
+	if err := db.Raw(facturasMesQuery, producto, idSucursal, codigoSin, desde, hasta).Scan(&facturas).Error; err != nil {
+		return nil, fmt.Errorf("error al buscar facturas del mes: %w", err)
+	}
+	return facturas, nil
 }

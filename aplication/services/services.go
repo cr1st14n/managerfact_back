@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"managerfact/internal/domain/models"
@@ -88,14 +89,10 @@ func (s *dbConnectionService) CreateConnection(connection *models.DbConnection) 
 		return fmt.Errorf("faltan campos requeridos en la conexión")
 	}
 
-	// Probar la conexión antes de guardarla
-	testResult, err := s.TestConnectionByConfig(connection)
-	if err != nil {
-		return fmt.Errorf("error probando conexión: %v", err)
-	}
-
-	if !testResult.Success {
-		return fmt.Errorf("no se pudo conectar a la base de datos: %s", testResult.Message)
+	// Al guardar solo se verifica con un ping que el servidor responde; el
+	// login y el puerto se validan con "Probar".
+	if err := s.verificarHost(connection); err != nil {
+		return fmt.Errorf("no se pudo verificar el servidor: %v", err)
 	}
 
 	// Guardar en el repositorio
@@ -105,6 +102,18 @@ func (s *dbConnectionService) CreateConnection(connection *models.DbConnection) 
 
 	log.Printf("Conexión '%s' creada exitosamente", connection.ServerName)
 	return nil
+}
+
+// verificarHost comprueba con un ping que el servidor responde (sin validar
+// puerto ni credenciales). Si el backend no tiene el comando ping no se puede
+// verificar y no se bloquea el guardado.
+func (s *dbConnectionService) verificarHost(connection *models.DbConnection) error {
+	err := pingHost(connection.Host)
+	if errors.Is(err, errPingNoDisponible) {
+		log.Printf("Aviso: no hay comando ping en este equipo; no se verificó el host %s", connection.Host)
+		return nil
+	}
+	return err
 }
 
 // GetConnection obtiene una conexión por ID
@@ -154,20 +163,17 @@ func (s *dbConnectionService) UpdateConnection(connection *models.DbConnection) 
 	}
 
 	// Verificar que la conexión existe
-	_, err := s.repo.GetByID(connection.ID)
+	existente, err := s.repo.GetByID(connection.ID)
 	if err != nil {
 		return err
 	}
 
-	// Si está activa, probar la conexión
-	if connection.IsActive {
-		testResult, err := s.TestConnectionByConfig(connection)
-		if err != nil {
-			return fmt.Errorf("error probando conexión actualizada: %v", err)
-		}
-
-		if !testResult.Success {
-			return fmt.Errorf("la conexión actualizada no es válida: %s", testResult.Message)
+	// Solo se hace ping si cambió el host (para atrapar un error de tipeo):
+	// reclasificar el ambiente, cambiar la contraseña o la descripción no
+	// depende de que el servidor responda en este momento.
+	if connection.IsActive && existente.Host != connection.Host {
+		if err := s.verificarHost(connection); err != nil {
+			return fmt.Errorf("no se pudo verificar el servidor: %v", err)
 		}
 	}
 
@@ -267,7 +273,7 @@ func (s *dbConnectionService) TestConnectionByConfig(connection *models.DbConnec
 
 	// Ping de conectividad
 	if err := db.PingContext(ctx); err != nil {
-		result.Message = "Error de conectividad"
+		result.Message = "Error de conectividad ping"
 		result.Error = err.Error()
 		return result, nil
 	}

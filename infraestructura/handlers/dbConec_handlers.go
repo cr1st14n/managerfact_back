@@ -32,6 +32,8 @@ type CreateConnectionRequest struct {
 	IsActive     *bool  `json:"is_active,omitempty"`
 	Description  string `json:"description,omitempty"`
 	Type         string `json:"type" validate:"required,min=1,max=50"`
+	// Ambiente: produccion | baja | test. Vacío = produccion.
+	Ambiente string `json:"ambiente,omitempty"`
 }
 
 // UpdateConnectionRequest estructura para actualizar conexión
@@ -42,10 +44,15 @@ type UpdateConnectionRequest struct {
 	Port         int    `json:"port" validate:"required,min=1,max=65535"`
 	DatabaseName string `json:"database_name" validate:"required,min=1,max=100"`
 	Username     string `json:"username" validate:"required,min=1,max=100"`
-	Password     string `json:"password" validate:"required,min=1"`
-	IsActive     *bool  `json:"is_active,omitempty"`
-	Description  string `json:"description,omitempty"`
-	Type         string `json:"type" validate:"required,min=1,max=50"`
+	// Password es solo de escritura: vacío = conservar la guardada; con valor
+	// = reemplazarla (la conexión se prueba con la nueva antes de guardar).
+	// Nunca se devuelve por la API.
+	Password    string `json:"password,omitempty"`
+	IsActive    *bool  `json:"is_active,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type" validate:"required,min=1,max=50"`
+	// Ambiente: produccion | baja | test. Vacío = conservar el guardado.
+	Ambiente string `json:"ambiente,omitempty"`
 }
 
 // APIResponse estructura estándar de respuesta
@@ -67,6 +74,15 @@ func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 		})
 	}
 
+	ambiente, ok := models.NormalizarAmbiente(req.Ambiente)
+	if !ok {
+		return c.Status(fiber.StatusBadRequest).JSON(APIResponse{
+			Success: false,
+			Message: "Ambiente inválido",
+			Error:   "ambiente debe ser produccion, baja o test",
+		})
+	}
+
 	// Convertir request a modelo
 	connection := &models.DbConnection{
 		ServerName:   req.ServerName,
@@ -78,6 +94,7 @@ func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 		IsActive:     true, // Por defecto activa
 		Description:  req.Description,
 		Type:         req.Type,
+		Ambiente:     ambiente,
 	}
 
 	// Si se especifica is_active, usar ese valor
@@ -223,21 +240,38 @@ func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 		})
 	}
 
-	// Convertir request a modelo
-	connection := &models.DbConnection{
-		ID:           req.ID,
-		ServerName:   req.ServerName,
-		Host:         req.Host,
-		Port:         req.Port,
-		DatabaseName: req.DatabaseName,
-		Username:     req.Username,
-		Password:     req.Password,
-		IsActive:     true, // Por defecto activa
-		Description:  req.Description,
-		Type:         req.Type,
+	// Se parte del registro guardado (no de uno nuevo) para conservar la
+	// contraseña cuando no viene en el request, y created_at, que repo.Save
+	// pisaría con el valor cero.
+	connection, err := h.service.GetConnection(uint(id))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(APIResponse{
+			Success: false,
+			Message: "Conexión no encontrada",
+			Error:   err.Error(),
+		})
 	}
-
-	// Si se especifica is_active, usar ese valor
+	connection.ServerName = req.ServerName
+	connection.Host = req.Host
+	connection.Port = req.Port
+	connection.DatabaseName = req.DatabaseName
+	connection.Username = req.Username
+	connection.Description = req.Description
+	connection.Type = req.Type
+	if req.Password != "" {
+		connection.Password = req.Password
+	}
+	if req.Ambiente != "" {
+		ambiente, ok := models.NormalizarAmbiente(req.Ambiente)
+		if !ok {
+			return c.Status(fiber.StatusBadRequest).JSON(APIResponse{
+				Success: false,
+				Message: "Ambiente inválido",
+				Error:   "ambiente debe ser produccion, baja o test",
+			})
+		}
+		connection.Ambiente = ambiente
+	}
 	if req.IsActive != nil {
 		connection.IsActive = *req.IsActive
 	}
@@ -420,22 +454,23 @@ func (h *DbConnectionHandler) GetConnectionsStats(c *fiber.Ctx) error {
 	})
 }
 
-// RegisterRoutes registra todas las rutas del handler. El listado (GET)
+// RegisterRoutes registra todas las rutas del handler. El listado (GET /)
 // queda abierto a cualquier autenticado, incluido el rol "consultas", que lo
 // necesita para elegir la base antes de consultar Reportes/DUAS Monitor;
-// crear/editar/eliminar/test quedan bloqueados a ese rol con
-// requireNoConsultas.
-func (h *DbConnectionHandler) RegisterRoutes(router fiber.Router, requireNoConsultas fiber.Handler) {
+// todo lo demás (detalle, stats, crear/editar/eliminar/test) es solo admin.
+func (h *DbConnectionHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
 	connections := router.Group("/connections")
 
-	connections.Post("/", requireNoConsultas, h.CreateConnection)
 	connections.Get("/", h.GetAllConnections)
-	connections.Get("/paginated", h.GetConnectionsPaginated)
-	connections.Get("/stats", h.GetConnectionsStats)
-	connections.Get("/:id", h.GetConnection)
-	connections.Put("/:id", requireNoConsultas, h.UpdateConnection)
-	connections.Delete("/:id", requireNoConsultas, h.DeleteConnection)
-	connections.Patch("/:id/soft-delete", requireNoConsultas, h.SoftDeleteConnection)
-	connections.Post("/:id/test", requireNoConsultas, h.TestConnection)
-	connections.Post("/test", requireNoConsultas, h.TestConnectionByConfig)
+
+	// "/test" y "/stats" antes que "/:id" para que no los capture como ID.
+	connections.Post("/test", requireAdmin, h.TestConnectionByConfig)
+	connections.Get("/stats", requireAdmin, h.GetConnectionsStats)
+	connections.Get("/paginated", requireAdmin, h.GetConnectionsPaginated)
+	connections.Post("/", requireAdmin, h.CreateConnection)
+	connections.Get("/:id", requireAdmin, h.GetConnection)
+	connections.Put("/:id", requireAdmin, h.UpdateConnection)
+	connections.Delete("/:id", requireAdmin, h.DeleteConnection)
+	connections.Patch("/:id/soft-delete", requireAdmin, h.SoftDeleteConnection)
+	connections.Post("/:id/test", requireAdmin, h.TestConnection)
 }
