@@ -91,10 +91,6 @@ func (h *CodigoProductoHandler) Delete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Código de producto eliminado exitosamente"})
 }
 
-// RegisterRoutes registra las rutas bajo /codigoproducto. El listado queda
-// abierto a cualquier autenticado (Reportes y Descarga Mensual lo usan para
-// elegir productos, incluido el rol "consultas"); crear/editar/eliminar solo
-// admin.
 func (h *CodigoProductoHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
 	codigos := router.Group("/codigoproducto")
 	codigos.Get("/", h.GetAll)

@@ -6,18 +6,7 @@ import (
 	"time"
 )
 
-// EnvioWorker envía automáticamente, en background, las facturas
-// prevaloradas y las solicitudes de anulación que están en estado
-// "pendiente" — ver doc/EnvioFacturacion.md sección 5.
-//
-// Aplica un circuit breaker por sucursal facturador: si una sucursal falla
-// por un error de transporte (el facturador no responde / está caído), se
-// la marca "en_revision" y se dejan de intentar el resto de sus pendientes
-// en este ciclo — evita golpear un servidor caído con decenas de intentos
-// seguidos. En el siguiente ciclo, si ya pasó el tiempo de espera
-// (cooldownRevision), se vuelve a intentar; si el facturador responde
-// (aceptado o rechazado, no importa cuál) la sucursal vuelve sola a
-// "activo" — esa parte la hacen Facturar/Anular.
+// Un error de transporte pausa la sucursal este ciclo; se reintenta tras cooldownRevision para no saturar un servidor caído.
 type EnvioWorker struct {
 	facturaPrevalorada *FacturaPrevaloradaService
 	facturaAnulacion   *FacturaAnulacionService
@@ -36,7 +25,6 @@ func NewEnvioWorker(facturaPrevalorada *FacturaPrevaloradaService, facturaAnulac
 	}
 }
 
-// Iniciar corre el loop de envío; se llama con "go worker.Iniciar()".
 func (w *EnvioWorker) Iniciar() {
 	log.Printf("[EnvioWorker] iniciado (intervalo=%s, cooldown_revision=%s)", w.intervalo, w.cooldownRevision)
 	ticker := time.NewTicker(w.intervalo)
@@ -52,16 +40,10 @@ func (w *EnvioWorker) Iniciar() {
 	}
 }
 
-// Detener corta el loop; no hace falta esperar a que termine el ciclo en
-// curso, es solo para tests/apagado ordenado.
 func (w *EnvioWorker) Detener() {
 	close(w.detener)
 }
 
-// sucursalDisponible decide si vale la pena intentar enviar hacia esta
-// sucursal ahora mismo: no está en la lista de las que ya fallaron en este
-// mismo ciclo, y si está "en_revision" de un ciclo anterior, ya pasó el
-// tiempo de espera desde el último error.
 func (w *EnvioWorker) sucursalDisponible(sucursal *models.SucursalFacturador, fallidasEnEsteCiclo map[uint]bool) bool {
 	if fallidasEnEsteCiclo[sucursal.ID] {
 		return false

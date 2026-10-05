@@ -38,8 +38,6 @@ func (r *UsuarioRepository) GetByID(id uint) (*models.Usuario, error) {
 	return &usuario, nil
 }
 
-// GetByCodigoUsuario busca un usuario por su código de acceso (login);
-// usado por UsuarioService.Login.
 func (r *UsuarioRepository) GetByCodigoUsuario(codigoUsuario string) (*models.Usuario, error) {
 	var usuario models.Usuario
 	err := r.db.Where("codigo_usuario = ?", codigoUsuario).First(&usuario).Error
@@ -79,8 +77,6 @@ func (r *UsuarioRepository) SoftDelete(id uint) error {
 	return nil
 }
 
-// GetRegionales lista las regionales disponibles (La Paz, Cochabamba, Santa
-// Cruz, Beni).
 func (r *UsuarioRepository) GetRegionales() ([]models.Regional, error) {
 	var regionales []models.Regional
 	err := r.db.Order("nombre ASC").Find(&regionales).Error
@@ -90,7 +86,6 @@ func (r *UsuarioRepository) GetRegionales() ([]models.Regional, error) {
 	return regionales, nil
 }
 
-// GetSucursalesCatalogo lista el catálogo maestro de sucursales.
 func (r *UsuarioRepository) GetSucursalesCatalogo() ([]models.SucursalCatalogo, error) {
 	var sucursales []models.SucursalCatalogo
 	err := r.db.Preload("Regional").Order("codigo_sucursal_sin ASC").Find(&sucursales).Error
@@ -100,7 +95,6 @@ func (r *UsuarioRepository) GetSucursalesCatalogo() ([]models.SucursalCatalogo, 
 	return sucursales, nil
 }
 
-// codigosATexto ordena, deduplica y concatena códigos SIN como "1,6,7".
 func codigosATexto(codigos []int) string {
 	if len(codigos) == 0 {
 		return ""
@@ -121,8 +115,6 @@ func codigosATexto(codigos []int) string {
 	return strings.Join(partes, ",")
 }
 
-// textoACodigos parsea "1,6,7" a un set de códigos SIN. Texto vacío = sin
-// accesos.
 func textoACodigos(texto string) map[int]struct{} {
 	set := map[int]struct{}{}
 	texto = strings.TrimSpace(texto)
@@ -141,12 +133,6 @@ func textoACodigos(texto string) map[int]struct{} {
 	return set
 }
 
-// SetAccesos reemplaza por completo la configuración de accesos de un
-// usuario: la bandera de acceso total y la colección de códigos SIN de
-// sucursal permitidos. regionalesIDs/sucursalesIDs son selección por
-// conveniencia desde el front (agrupada visualmente); acá se resuelven a
-// los códigos SIN de sus sucursales y se guardan ya aplanados en
-// sucursales_permitidas_codigos.
 func (r *UsuarioRepository) SetAccesos(usuarioID uint, accesoTotal bool, regionalesIDs, sucursalesIDs []uint) error {
 	var codigos []int
 
@@ -180,18 +166,11 @@ func (r *UsuarioRepository) SetAccesos(usuarioID uint, accesoTotal bool, regiona
 	return nil
 }
 
-// AccesosResueltos es la selección por regional/sucursal derivada de la
-// colección de códigos SIN guardada — reconstruye lo que el front necesita
-// para precargar el modal de accesos (qué regionales aparecen "completas" y
-// qué sucursales sueltas quedan marcadas).
 type AccesosResueltos struct {
 	RegionalesIDs []uint
 	SucursalesIDs []uint
 }
 
-// GetAccesos deriva, a partir de sucursales_permitidas_codigos, qué
-// regionales están completamente cubiertas y qué sucursales sueltas quedan
-// marcadas individualmente.
 func (r *UsuarioRepository) GetAccesos(usuarioID uint) (*AccesosResueltos, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {
@@ -233,9 +212,6 @@ func (r *UsuarioRepository) GetAccesos(usuarioID uint) (*AccesosResueltos, error
 	return resultado, nil
 }
 
-// SucursalesPermitidas resuelve el catálogo efectivo de sucursales a las que
-// el usuario tiene acceso: todo el catálogo si tiene AccesoTotal, o las que
-// coincidan con sucursales_permitidas_codigos.
 func (r *UsuarioRepository) SucursalesPermitidas(usuarioID uint) ([]models.SucursalCatalogo, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {
@@ -266,9 +242,6 @@ func (r *UsuarioRepository) SucursalesPermitidas(usuarioID uint) ([]models.Sucur
 	return sucursales, nil
 }
 
-// EsAdmin indica si el usuario tiene rol "admin" — usado por
-// middleware.RequireAdmin para bloquear los módulos de Usuarios y
-// Sucursales Facturador a los operadores.
 func (r *UsuarioRepository) EsAdmin(usuarioID uint) (bool, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {
@@ -277,10 +250,6 @@ func (r *UsuarioRepository) EsAdmin(usuarioID uint) (bool, error) {
 	return usuario.Rol == models.RolAdmin, nil
 }
 
-// EsConsultas indica si el usuario tiene rol "consultas" — usado por
-// middleware.RequireNoConsultas para bloquear los módulos de Facturación,
-// Sucursales Facturador y la escritura de Conexiones a este rol, que solo
-// puede consultar Reportes y DUAS Monitor.
 func (r *UsuarioRepository) EsConsultas(usuarioID uint) (bool, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {
@@ -289,8 +258,6 @@ func (r *UsuarioRepository) EsConsultas(usuarioID uint) (bool, error) {
 	return usuario.Rol == models.RolConsultas, nil
 }
 
-// TieneAccesoTotal indica si el usuario tiene acceso nacional (bypass de
-// sucursales_permitidas_codigos).
 func (r *UsuarioRepository) TieneAccesoTotal(usuarioID uint) (bool, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {
@@ -299,9 +266,6 @@ func (r *UsuarioRepository) TieneAccesoTotal(usuarioID uint) (bool, error) {
 	return usuario.AccesoTotal, nil
 }
 
-// TieneAccesoSucursal verifica si el usuario puede acceder a la sucursal
-// identificada por su código SIN — el chequeo real usado al hacer consultas
-// de facturas de una sucursal puntual.
 func (r *UsuarioRepository) TieneAccesoSucursal(usuarioID uint, codigoSucursalSin int) (bool, error) {
 	usuario, err := r.GetByID(usuarioID)
 	if err != nil {

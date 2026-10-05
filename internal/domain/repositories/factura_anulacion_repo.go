@@ -9,16 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// LoteResumenAnulacion agrega las facturas de anulación de un mismo lote de
-// importación, con el contexto con el que se cargó (sucursal, observación) y
-// el desglose de estados de envío.
 type LoteResumenAnulacion struct {
 	LoteID                   string `json:"lote_id"`
 	SucursalFacturadorID     uint   `json:"sucursal_facturador_id"`
 	SucursalFacturadorNombre string `json:"sucursal_facturador_nombre"`
-	// CodigoSucursalSin no se serializa: solo se usa para filtrar el lote por
-	// las sucursales permitidas del usuario (ver
-	// FacturaAnulacionService.ListarLotes).
+		// CodigoSucursalSin solo filtra por permisos y no forma parte de la respuesta.
 	CodigoSucursalSin int       `json:"-"`
 	Observacion       string    `json:"observacion"`
 	Total             int64     `json:"total"`
@@ -45,8 +40,6 @@ func (r *FacturaAnulacionRepository) Create(factura *models.FacturaAnulacion) er
 	return nil
 }
 
-// CreateBatch inserta todas las filas válidas de una importación en una sola
-// transacción.
 func (r *FacturaAnulacionRepository) CreateBatch(facturas []models.FacturaAnulacion) error {
 	if len(facturas) == 0 {
 		return nil
@@ -57,9 +50,6 @@ func (r *FacturaAnulacionRepository) CreateBatch(facturas []models.FacturaAnulac
 	return nil
 }
 
-// Update guarda el resultado del envío al facturador (etapa 2): solo toca
-// las columnas de seguimiento, nunca los datos importados en la etapa 1 ni
-// la asociación SucursalFacturador.
 func (r *FacturaAnulacionRepository) Update(factura *models.FacturaAnulacion) error {
 	err := r.db.Model(&models.FacturaAnulacion{}).Where("id = ?", factura.ID).Updates(map[string]interface{}{
 		"estado":            factura.Estado,
@@ -86,8 +76,6 @@ func (r *FacturaAnulacionRepository) GetByID(id uint) (*models.FacturaAnulacion,
 	return &factura, nil
 }
 
-// GetAll lista facturas de anulación, filtrando opcionalmente por estado y/o
-// lote_id (ambos vacíos = sin filtro).
 func (r *FacturaAnulacionRepository) GetAll(estado, loteID string) ([]models.FacturaAnulacion, error) {
 	facturas := []models.FacturaAnulacion{}
 	query := r.db.Preload("SucursalFacturador")
@@ -103,10 +91,7 @@ func (r *FacturaAnulacionRepository) GetAll(estado, loteID string) ([]models.Fac
 	return facturas, nil
 }
 
-// GetPendientesParaEnvio lista las facturas de anulación pendientes en el
-// orden en que el EnvioWorker debe procesarlas: agrupadas por sucursal (para
-// poder aplicar el circuit breaker por sucursal) y luego por lote/orden de
-// creación.
+// El orden agrupa por sucursal para aplicar el circuit breaker y luego por lote/creación.
 func (r *FacturaAnulacionRepository) GetPendientesParaEnvio() ([]models.FacturaAnulacion, error) {
 	facturas := []models.FacturaAnulacion{}
 	err := r.db.Preload("SucursalFacturador").
@@ -119,9 +104,6 @@ func (r *FacturaAnulacionRepository) GetPendientesParaEnvio() ([]models.FacturaA
 	return facturas, nil
 }
 
-// GetLotes agrega las facturas de anulación por lote_id: sucursal y
-// observación con las que se cargó el lote, total de filas y desglose por
-// estado.
 func (r *FacturaAnulacionRepository) GetLotes() ([]LoteResumenAnulacion, error) {
 	lotes := []LoteResumenAnulacion{}
 	err := r.db.Table("facturas_anulacion AS fa").

@@ -6,11 +6,9 @@ import (
 	"managerfact/internal/domain/models"
 	"strings"
 
-	// "github.com/yourproject/internal/models"
 	"gorm.io/gorm"
 )
 
-// DbConnectionRepository interface define los métodos del repositorio
 type DbConnectionRepository interface {
 	Create(connection *models.DbConnection) error
 	GetByID(id uint) (*models.DbConnection, error)
@@ -26,25 +24,21 @@ type DbConnectionRepository interface {
 	GetPaginated(offset, limit int) ([]models.DbConnection, int64, error)
 }
 
-// dbConnectionRepository implementación del repositorio
 type dbConnectionRepository struct {
 	db *gorm.DB
 }
 
-// NewDbConnectionRepository crea una nueva instancia del repositorio
 func NewDbConnectionRepository(db *gorm.DB) DbConnectionRepository {
 	return &dbConnectionRepository{
 		db: db,
 	}
 }
 
-// Create crea una nueva conexión de base de datos
 func (r *dbConnectionRepository) Create(connection *models.DbConnection) error {
 	if connection == nil {
 		return errors.New("connection cannot be nil")
 	}
 
-	// Verificar que no exista una conexión con el mismo nombre
 	var existingConnection models.DbConnection
 	err := r.db.Where("server_name = ?", connection.ServerName).First(&existingConnection).Error
 	if err == nil {
@@ -54,7 +48,6 @@ func (r *dbConnectionRepository) Create(connection *models.DbConnection) error {
 		return fmt.Errorf("error verificando nombre único: %v", err)
 	}
 
-	// Crear la conexión
 	if err := r.db.Create(connection).Error; err != nil {
 		return fmt.Errorf("error creando conexión: %v", err)
 	}
@@ -62,7 +55,6 @@ func (r *dbConnectionRepository) Create(connection *models.DbConnection) error {
 	return nil
 }
 
-// GetByID obtiene una conexión por su ID
 func (r *dbConnectionRepository) GetByID(id uint) (*models.DbConnection, error) {
 	var connection models.DbConnection
 	err := r.db.First(&connection, id).Error
@@ -76,7 +68,6 @@ func (r *dbConnectionRepository) GetByID(id uint) (*models.DbConnection, error) 
 	return &connection, nil
 }
 
-// GetByServerName obtiene una conexión por su nombre de servidor
 func (r *dbConnectionRepository) GetByServerName(serverName string) (*models.DbConnection, error) {
 	var connection models.DbConnection
 	err := r.db.Where("server_name = ?", serverName).First(&connection).Error
@@ -90,7 +81,6 @@ func (r *dbConnectionRepository) GetByServerName(serverName string) (*models.DbC
 	return &connection, nil
 }
 
-// GetAll obtiene todas las conexiones (incluidas las inactivas)
 func (r *dbConnectionRepository) GetAll() ([]models.DbConnection, error) {
 	var connections []models.DbConnection
 	err := r.db.Order("server_name ASC").Find(&connections).Error
@@ -101,7 +91,6 @@ func (r *dbConnectionRepository) GetAll() ([]models.DbConnection, error) {
 	return connections, nil
 }
 
-// GetAllActive obtiene solo las conexiones activas
 func (r *dbConnectionRepository) GetAllActive() ([]models.DbConnection, error) {
 	var connections []models.DbConnection
 	err := r.db.Where("is_active = ?", true).Order("server_name ASC").Find(&connections).Error
@@ -112,7 +101,6 @@ func (r *dbConnectionRepository) GetAllActive() ([]models.DbConnection, error) {
 	return connections, nil
 }
 
-// GetAllActiveByType obtiene conexiones activas filtradas por tipo (case-insensitive)
 func (r *dbConnectionRepository) GetAllActiveByType(tipo string) ([]models.DbConnection, error) {
 	var connections []models.DbConnection
 	err := r.db.Where("is_active = ? AND LOWER(type) LIKE ?", true, "%"+strings.ToLower(tipo)+"%").Order("server_name ASC").Find(&connections).Error
@@ -123,13 +111,11 @@ func (r *dbConnectionRepository) GetAllActiveByType(tipo string) ([]models.DbCon
 	return connections, nil
 }
 
-// Update actualiza una conexión existente
 func (r *dbConnectionRepository) Update(connection *models.DbConnection) error {
 	if connection == nil {
 		return errors.New("connection cannot be nil")
 	}
 
-	// Verificar que la conexión existe
 	var existingConnection models.DbConnection
 	err := r.db.First(&existingConnection, connection.ID).Error
 	if err != nil {
@@ -139,7 +125,6 @@ func (r *dbConnectionRepository) Update(connection *models.DbConnection) error {
 		return fmt.Errorf("error verificando conexión: %v", err)
 	}
 
-	// Verificar nombre único (excluyendo la conexión actual)
 	var duplicateConnection models.DbConnection
 	err = r.db.Where("server_name = ? AND id != ?", connection.ServerName, connection.ID).First(&duplicateConnection).Error
 	if err == nil {
@@ -149,7 +134,6 @@ func (r *dbConnectionRepository) Update(connection *models.DbConnection) error {
 		return fmt.Errorf("error verificando nombre único: %v", err)
 	}
 
-	// Actualizar la conexión
 	if err := r.db.Save(connection).Error; err != nil {
 		return fmt.Errorf("error actualizando conexión: %v", err)
 	}
@@ -157,7 +141,6 @@ func (r *dbConnectionRepository) Update(connection *models.DbConnection) error {
 	return nil
 }
 
-// Delete elimina permanentemente una conexión
 func (r *dbConnectionRepository) Delete(id uint) error {
 	result := r.db.Unscoped().Delete(&models.DbConnection{}, id)
 	if result.Error != nil {
@@ -171,7 +154,6 @@ func (r *dbConnectionRepository) Delete(id uint) error {
 	return nil
 }
 
-// SoftDelete realiza eliminación lógica de una conexión
 func (r *dbConnectionRepository) SoftDelete(id uint) error {
 	result := r.db.Delete(&models.DbConnection{}, id)
 	if result.Error != nil {
@@ -185,20 +167,16 @@ func (r *dbConnectionRepository) SoftDelete(id uint) error {
 	return nil
 }
 
-// TestConnection verifica si es posible conectar a la base de datos
 func (r *dbConnectionRepository) TestConnection(id uint) error {
 	connection, err := r.GetByID(id)
 	if err != nil {
 		return err
 	}
 
-	// Aquí se implementaría la lógica para probar la conexión
-	// Por ahora retornamos nil, se implementará en el service
 	_ = connection
 	return nil
 }
 
-// Count obtiene el total de conexiones
 func (r *dbConnectionRepository) Count() (int64, error) {
 	var count int64
 	err := r.db.Model(&models.DbConnection{}).Count(&count).Error
@@ -209,17 +187,14 @@ func (r *dbConnectionRepository) Count() (int64, error) {
 	return count, nil
 }
 
-// GetPaginated obtiene conexiones con paginación
 func (r *dbConnectionRepository) GetPaginated(offset, limit int) ([]models.DbConnection, int64, error) {
 	var connections []models.DbConnection
 	var total int64
 
-	// Obtener el total
 	if err := r.db.Model(&models.DbConnection{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("error contando conexiones: %v", err)
 	}
 
-	// Obtener los registros paginados
 	err := r.db.Order("server_name ASC").Offset(offset).Limit(limit).Find(&connections).Error
 	if err != nil {
 		return nil, 0, fmt.Errorf("error obteniendo conexiones paginadas: %v", err)

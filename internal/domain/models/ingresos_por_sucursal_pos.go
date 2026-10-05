@@ -1,10 +1,5 @@
 package models
 
-// IngresosPorSucursalPos es una fila de "Ingresos por Sucursal y Punto de
-// Venta": separa por aeropuerto/caja. CodigoPos y PuntoVenta vienen vacíos
-// cuando la factura no tiene punto de venta asociado (LEFT JOIN a
-// propósito: con INNER esas facturas se perderían del total). Ver
-// ClicReportes.md sección 7.
 type IngresosPorSucursalPos struct {
 	CodigoSucursal        string  `json:"codigo_sucursal" gorm:"column:codigo_sucursal"`
 	Sucursal              string  `json:"sucursal" gorm:"column:sucursal"`

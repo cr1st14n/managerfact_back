@@ -17,9 +17,6 @@ func NewFacturaAnulacionHandler(s *services.FacturaAnulacionService) *FacturaAnu
 	return &FacturaAnulacionHandler{service: s}
 }
 
-// ImportarExcel recibe el archivo .xlsx de anulaciones (multipart, campo
-// "archivo") junto con la sucursal_facturador_id y la observación elegidas
-// para todo el lote.
 func (h *FacturaAnulacionHandler) ImportarExcel(c *fiber.Ctx) error {
 	usuarioID, ok := usuarioIDDesdeContexto(c)
 	if !ok {
@@ -77,10 +74,6 @@ func (h *FacturaAnulacionHandler) GetAll(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Facturas de anulación obtenidas exitosamente", "data": facturas})
 }
 
-// GetLotes lista el registro de lotes de importación de anulaciones: con qué
-// sucursal facturador y observación se cargó cada uno, y el desglose de
-// estados de envío. Solo incluye lotes de sucursales permitidas para el
-// usuario autenticado.
 func (h *FacturaAnulacionHandler) GetLotes(c *fiber.Ctx) error {
 	usuarioID, ok := usuarioIDDesdeContexto(c)
 	if !ok {
@@ -94,8 +87,6 @@ func (h *FacturaAnulacionHandler) GetLotes(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Lotes obtenidos exitosamente", "data": lotes})
 }
 
-// DescargarPlantilla entrega el .xlsx de ejemplo con las columnas esperadas
-// por ImportarExcel.
 func (h *FacturaAnulacionHandler) DescargarPlantilla(c *fiber.Ctx) error {
 	contenido, err := h.service.GenerarPlantilla()
 	if err != nil {
@@ -126,11 +117,6 @@ func (h *FacturaAnulacionHandler) GetByID(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Factura de anulación encontrada", "data": factura})
 }
 
-// Anular dispara el envío síncrono de una solicitud de anulación al
-// facturador de su sucursal (etapa 2 del flujo). Antes de enviar, exige que
-// el usuario tenga permiso sobre la sucursal de esta anulación — mismo
-// control que GetByID, para que no se pueda anular por ID una factura de
-// una sucursal fuera de las permitidas.
 func (h *FacturaAnulacionHandler) Anular(c *fiber.Ctx) error {
 	usuarioID, ok := usuarioIDDesdeContexto(c)
 	if !ok {
@@ -155,7 +141,7 @@ func (h *FacturaAnulacionHandler) Anular(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"message": err.Error()})
 		}
 		if factura != nil {
-			// El intento (fallido) ya quedó guardado; se informa el detalle.
+
 			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"message": "Error enviando la anulación al facturador", "error": err.Error(), "data": factura})
 		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Error anulando", "error": err.Error()})

@@ -187,8 +187,6 @@ func (h *UsuarioHandler) GetAccesos(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Error obteniendo accesos", "error": err.Error()})
 	}
 
-	// Mismo shape que antes ([{regional_id}], [{sucursal_id}]) para no tener
-	// que tocar el front, que ya sabe leer estos dos campos.
 	regionales := make([]fiber.Map, len(accesos.RegionalesIDs))
 	for i, id := range accesos.RegionalesIDs {
 		regionales[i] = fiber.Map{"regional_id": id}
@@ -207,9 +205,6 @@ func (h *UsuarioHandler) GetAccesos(c *fiber.Ctx) error {
 	})
 }
 
-// GetSucursalesPermitidas resuelve el catálogo efectivo de sucursales a las
-// que el usuario tiene acceso. Todavía no está conectado a ningún select del
-// front (el login sigue pendiente); queda listo para cuando exista sesión.
 func (h *UsuarioHandler) GetSucursalesPermitidas(c *fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
@@ -238,11 +233,6 @@ func (h *UsuarioHandler) GetSucursalesCatalogo(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Sucursales obtenidas exitosamente", "data": sucursales})
 }
 
-// RegisterRoutes registra las rutas de usuarios y los catálogos de
-// regionales/sucursales que usa el formulario de accesos, todas detrás de
-// requireAdmin (los operadores no pueden ver ni operar este módulo). Los
-// prefijos "/usuarios", "/regionales" y "/sucursales-catalogo" scopean el
-// middleware solo a estas rutas, no a las demás del grupo protegido.
 func (h *UsuarioHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
 	usuarios := router.Group("/usuarios", requireAdmin)
 	usuarios.Post("/", h.Create)

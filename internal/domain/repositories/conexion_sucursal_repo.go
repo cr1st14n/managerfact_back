@@ -16,8 +16,6 @@ func NewConexionSucursalRepo(db *gorm.DB) *ConexionSucursalRepo {
 	return &ConexionSucursalRepo{db: db}
 }
 
-// ResumenSucursales es lo que muestra /conexiones por cada conexión: cuántas
-// sucursales hay copiadas y cuándo se actualizó por última vez.
 type ResumenSucursales struct {
 	ConexionID    uint      `json:"conexion_id"`
 	Total         int64     `json:"total"`
@@ -39,9 +37,7 @@ func (r *ConexionSucursalRepo) Resumen() ([]ResumenSucursales, error) {
 	return resumen, err
 }
 
-// Upsert inserta las sucursales nuevas y actualiza las existentes de una
-// conexión, y devuelve cuántas eran nuevas. Nunca borra: una sucursal que
-// desaparezca del origen se queda en la copia.
+// No borrar sucursales ausentes del origen: se conservan en la copia local.
 func (r *ConexionSucursalRepo) Upsert(conexionID uint, filas []models.ConexionSucursal) (int, error) {
 	if len(filas) == 0 {
 		return 0, nil
@@ -74,8 +70,6 @@ func (r *ConexionSucursalRepo) Upsert(conexionID uint, filas []models.ConexionSu
 	return nuevas, err
 }
 
-// ListByConexiones trae la copia local de varias conexiones de una sola vez
-// (una consulta, no una por conexión).
 func (r *ConexionSucursalRepo) ListByConexiones(conexionIDs []uint) ([]models.ConexionSucursal, error) {
 	var filas []models.ConexionSucursal
 	if len(conexionIDs) == 0 {

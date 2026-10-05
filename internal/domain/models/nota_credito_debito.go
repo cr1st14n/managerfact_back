@@ -1,14 +1,5 @@
 package models
 
-// NotaCreditoDebito es una fila de "Notas de Crédito/Débito y
-// Conciliación": documentos del sector 24 (nota crédito-débito) o 29 (nota
-// de conciliación) según el catálogo SIN, más cualquier documento que
-// apunte a una factura original como respaldo (por si el sector real
-// difiere de la asunción). DebitoFiscalIva/CreditoFiscalIva ya vienen
-// calculados en el documento: no recalcular el 13% acá. Ver
-// ClicReportes.md sección 4 -- incluye la advertencia "ASUNCION A VALIDAR"
-// sobre los códigos de sector 24/29, confirmar contra la sección 0.2 antes
-// de confiar en el desglose por sector.
 type NotaCreditoDebito struct {
 	Fecha                 string  `json:"fecha" gorm:"column:fecha"`
 	NroNota               string  `json:"nro_nota" gorm:"column:nro_nota"`

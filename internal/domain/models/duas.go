@@ -2,7 +2,6 @@ package models
 
 import "time"
 
-// DuasBusquedaParams representa los parámetros de búsqueda para DUAS
 type DuasBusquedaParams struct {
 	Nombre      string `json:"nombre"`
 	Apellido    string `json:"apellido"`
@@ -13,7 +12,6 @@ type DuasBusquedaParams struct {
 	Ticket      string `json:"ticket"`
 }
 
-// DuasResultado representa un registro de la búsqueda DUAS
 type DuasResultadoCentral struct {
 	IDTESFacturaItinerario string    `json:"idtes_factura_itinerario" gorm:"column:IDTES_FACTURA_ITINERARIO"`
 	FACNroFactura          string    `json:"fac_nrofactura" gorm:"column:NUMEROFACTURA"`
@@ -25,11 +23,10 @@ type DuasResultadoCentral struct {
 	UsuarioCreacion        string    `json:"usuariocreacion" gorm:"column:USUARIOCREACION"`
 	URLSin                 string    `json:"url_sin" gorm:"column:URL_SIN"`
 	FACDetalleFactura      string    `json:"fac_detallefactura" gorm:"column:FAC_DETALLEFACTURA"`
-	//FAC_FECHAEMISION_FACTURA
+
 	FacFechaEmisionFactura time.Time `json:"fac_fechaemision_factura" gorm:"column:FAC_FECHAEMISION_FACTURA"`
 }
 
-// DuasResultadoLocal representa un registro de la búsqueda DUAS para facturas locales
 type DuasResultadoLocal struct {
 	IDTESFacturaItinerario string    `json:"idtes_factura_itinerario" gorm:"column:IDTES_FACTURA_ITINERARIO"`
 	FACNroVuelo            string    `json:"fac_nrovuelo" gorm:"column:FAC_NROVUELO"`

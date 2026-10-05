@@ -1,10 +1,5 @@
 package models
 
-// IngresosPorMoneda es una fila de "Ingresos por Moneda y Tipo de Cambio".
-// En bolivianos, TipoCambio = 1 y TotalEnMonedaOriginal = TotalBs. Para
-// otras monedas, TotalEnMonedaOriginal está en moneda original y TotalBs en
-// Bs. DiferenciaCambioAbs es valor absoluto (no trae signo): no asumir si
-// es ganancia o pérdida. Ver ClicReportes.md sección 9.
 type IngresosPorMoneda struct {
 	CodigoMoneda          string  `json:"codigo_moneda" gorm:"column:codigo_moneda"`
 	Moneda                string  `json:"moneda" gorm:"column:moneda"`

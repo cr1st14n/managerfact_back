@@ -7,9 +7,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// LogEnvioHandler expone en solo lectura el registro de intentos de envío
-// (logs_envio), para que el front pueda mostrar que el EnvioWorker
-// realmente está corriendo.
 type LogEnvioHandler struct {
 	repo *repositories.LogEnvioRepository
 }

@@ -52,9 +52,6 @@ func (r *SucursalFacturadorRepository) Update(sucursal *models.SucursalFacturado
 	return nil
 }
 
-// ActualizarEstadoConexion registra el resultado (conectividad, no
-// resultado de negocio) del último intento de envío al facturador de esta
-// sucursal — usado por el circuit breaker del EnvioWorker.
 func (r *SucursalFacturadorRepository) ActualizarEstadoConexion(id uint, estado string, mensaje string, momento *time.Time) error {
 	err := r.db.Model(&models.SucursalFacturador{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"estado_conexion":       estado,

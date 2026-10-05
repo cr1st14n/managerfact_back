@@ -22,8 +22,6 @@ func (r *LogEnvioRepository) Create(log *models.LogEnvio) error {
 	return nil
 }
 
-// LogEnvioFiltro filtra el listado de logs; todos los campos vacíos/nil se
-// ignoran (sin filtro).
 type LogEnvioFiltro struct {
 	Tipo                 string
 	Resultado            string
@@ -32,9 +30,6 @@ type LogEnvioFiltro struct {
 	Limit                int
 }
 
-// GetAll lista los logs más recientes primero, aplicando los filtros no
-// vacíos de LogEnvioFiltro. Limit <= 0 usa un tope por defecto de 200 para
-// no cargar la tabla entera en cada refresco del front.
 func (r *LogEnvioRepository) GetAll(filtro LogEnvioFiltro) ([]models.LogEnvio, error) {
 	logs := []models.LogEnvio{}
 	query := r.db.Preload("SucursalFacturador")

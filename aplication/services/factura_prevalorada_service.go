@@ -16,13 +16,8 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// ErrFacturaYaAceptada se devuelve al intentar facturar un registro que el
-// facturador ya aceptó — reenviarlo generaría un documento fiscal duplicado.
 var ErrFacturaYaAceptada = errors.New("esta factura ya fue aceptada por el facturador, no se puede reenviar")
 
-// ErrSinPermisoSucursal se devuelve cuando el usuario autenticado intenta
-// cargar un Excel o consultar facturas de una sucursal que no tiene entre
-// sus sucursales permitidas (usuarios.sucursales_permitidas_codigos).
 var ErrSinPermisoSucursal = errors.New("no tienes permiso para esta sucursal")
 
 type FacturaPrevaloradaService struct {
@@ -41,14 +36,6 @@ func NewFacturaPrevaloradaService(
 	return &FacturaPrevaloradaService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo, usuarioService: usuarioService}
 }
 
-// codigosSucursalPermitidos resuelve, para el conjunto de codigo_sucursal_sin
-// dado, cuáles puede ver el usuario — usa el mismo chequeo directo que
-// TieneAccesoSucursal (acceso_total o coincidencia en
-// sucursales_permitidas_codigos) para cada código distinto, SIN pasar por el
-// catálogo sucursales_catalogo: SucursalFacturador es independiente de ese
-// catálogo (ver doc/EnvioFacturacion.md sección 1), así que un código de
-// sucursal facturador que no esté en el catálogo igual debe ser visible si
-// el usuario tiene permiso sobre ese código.
 func codigosSucursalPermitidos(usuarioService *UsuarioService, usuarioID uint, codigos []int) (map[int]bool, error) {
 	permitidos := make(map[int]bool, len(codigos))
 	vistos := make(map[int]bool, len(codigos))
@@ -68,20 +55,16 @@ func codigosSucursalPermitidos(usuarioService *UsuarioService, usuarioID uint, c
 	return permitidos, nil
 }
 
-// columnasEsperadas son los encabezados de columna del Excel de boletos
-// (ver doc/EnvioFacturacion.md sección 3).
 var columnasEsperadas = []string{
 	"detalle", "costo_dua_dolares", "fecha_emision",
 	"fecha_compra_boleto", "tipo_cambio", "codigo_producto",
 }
 
-// FilaConError describe una fila del Excel que no se pudo importar.
 type FilaConError struct {
 	Fila   int    `json:"fila"`
 	Motivo string `json:"motivo"`
 }
 
-// ImportarExcelResultado es la respuesta del endpoint de importación.
 type ImportarExcelResultado struct {
 	LoteID   string         `json:"lote_id"`
 	Total    int            `json:"total"`
@@ -89,10 +72,6 @@ type ImportarExcelResultado struct {
 	ConError []FilaConError `json:"con_error"`
 }
 
-// ImportarExcel parsea un archivo .xlsx de boletos y guarda las filas
-// válidas como facturas_prevaloradas en estado "pendiente", todas fijadas a
-// la sucursalFacturadorID elegida antes de importar (etapa 1 del flujo).
-// Las filas inválidas se reportan pero no abortan el archivo completo.
 func (s *FacturaPrevaloradaService) ImportarExcel(usuarioID uint, archivo io.Reader, sucursalFacturadorID uint, observacion string) (*ImportarExcelResultado, error) {
 	sucursal, err := s.sucursalFacturador.GetByID(sucursalFacturadorID)
 	if err != nil {
@@ -141,7 +120,7 @@ func (s *FacturaPrevaloradaService) ImportarExcel(usuarioID uint, archivo io.Rea
 	conError := []FilaConError{}
 
 	for i, fila := range filas[1:] {
-		numeroFila := i + 2 // +1 por índice base 0, +1 por la fila de encabezado
+		numeroFila := i + 2 
 		factura, err := parsearFilaBoleto(fila, indiceColumna, sucursalFacturadorID, loteID, observacion)
 		if err != nil {
 			conError = append(conError, FilaConError{Fila: numeroFila, Motivo: err.Error()})
@@ -242,8 +221,7 @@ func parsearFecha(valor string) (time.Time, error) {
 			return fecha, nil
 		}
 	}
-	// Excel puede entregar la fecha como número de serie (celda con
-	// formato de fecha real en vez de texto).
+
 	if serie, err := strconv.ParseFloat(valor, 64); err == nil {
 		if fecha, err := excelize.ExcelDateToTime(serie, false); err == nil {
 			return fecha, nil
@@ -270,12 +248,6 @@ func (s *FacturaPrevaloradaService) ObtenerPorID(usuarioID, id uint) (*models.Fa
 	return factura, nil
 }
 
-// Facturar arma el JSON de la factura prevalorada (boleto + sucursal
-// facturador) y lo envía a clic-core/facturas/recibir-sincrono (etapa 2 del
-// flujo, ver doc/EnvioFacturacion.md sección 2 y 5). Guarda el resultado del
-// intento (aceptado/rechazado/error) incluso si la llamada falla, para no
-// perder el rastro del envío. origen es "manual" (botón del front) o
-// "automatico" (EnvioWorker) — solo se usa para el registro en logs_envio.
 func (s *FacturaPrevaloradaService) Facturar(id uint, origen string) (*models.FacturaPrevalorada, error) {
 	factura, err := s.repo.GetByID(id)
 	if err != nil {
@@ -307,9 +279,7 @@ func (s *FacturaPrevaloradaService) Facturar(id uint, origen string) (*models.Fa
 		if guardarErr := s.repo.Update(factura); guardarErr != nil {
 			return nil, guardarErr
 		}
-		// Error de transporte (no de negocio): la sucursal facturador queda
-		// "en_revision" para que el EnvioWorker deje de insistir con ella
-		// hasta que vuelva a responder — ver doc/EnvioFacturacion.md sección 5.
+
 		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "en_revision", err.Error(), &fechaRespuesta); marcarErr != nil {
 			log.Printf("[FacturaPrevaloradaService] error marcando sucursal %d en_revision: %v", factura.SucursalFacturadorID, marcarErr)
 		}
@@ -317,8 +287,6 @@ func (s *FacturaPrevaloradaService) Facturar(id uint, origen string) (*models.Fa
 		return factura, fmt.Errorf("error enviando al facturador: %w", err)
 	}
 
-	// El facturador respondió (aceptado o rechazado): la sucursal está
-	// alcanzable, así que si estaba "en_revision" se recupera sola.
 	if factura.SucursalFacturador.EstadoConexion == "en_revision" {
 		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "activo", "", nil); marcarErr != nil {
 			log.Printf("[FacturaPrevaloradaService] error marcando sucursal %d activa: %v", factura.SucursalFacturadorID, marcarErr)
@@ -346,8 +314,6 @@ func (s *FacturaPrevaloradaService) Facturar(id uint, origen string) (*models.Fa
 	return factura, nil
 }
 
-// registrarLog guarda el intento en logs_envio; un fallo acá no debe abortar
-// el flujo de facturación, solo se loguea a consola.
 func (s *FacturaPrevaloradaService) registrarLog(facturaID uint, codigoIntegracion string, sucursalFacturadorID uint, origen, resultado, mensaje string) {
 	entrada := &models.LogEnvio{
 		Tipo:                 "prevalorada",
@@ -363,8 +329,6 @@ func (s *FacturaPrevaloradaService) registrarLog(facturaID uint, codigoIntegraci
 	}
 }
 
-// ListarTodos devuelve solo las facturas de sucursales que el usuario tiene
-// permitidas (ver codigosSucursalPermitidos).
 func (s *FacturaPrevaloradaService) ListarTodos(usuarioID uint, estado, loteID string) ([]models.FacturaPrevalorada, error) {
 	facturas, err := s.repo.GetAll(estado, loteID)
 	if err != nil {
@@ -389,15 +353,10 @@ func (s *FacturaPrevaloradaService) ListarTodos(usuarioID uint, estado, loteID s
 	return visibles, nil
 }
 
-// ListarPendientesParaEnvio expone las facturas pendientes para el
-// EnvioWorker, en el orden en que deben procesarse.
 func (s *FacturaPrevaloradaService) ListarPendientesParaEnvio() ([]models.FacturaPrevalorada, error) {
 	return s.repo.GetPendientesParaEnvio()
 }
 
-// ListarLotes agrega las facturas por lote de importación (registro de
-// lotes), filtrando a las sucursales permitidas del usuario; el detalle de
-// cada lote se obtiene después con ListarTodos(usuarioID, "", loteID).
 func (s *FacturaPrevaloradaService) ListarLotes(usuarioID uint) ([]repositories.LoteResumen, error) {
 	lotes, err := s.repo.GetLotes()
 	if err != nil {
@@ -420,8 +379,6 @@ func (s *FacturaPrevaloradaService) ListarLotes(usuarioID uint) ([]repositories.
 	return visibles, nil
 }
 
-// GenerarPlantilla arma el .xlsx de ejemplo con las columnas que espera
-// ImportarExcel, para que el usuario sepa en qué formato cargar el archivo.
 func (s *FacturaPrevaloradaService) GenerarPlantilla() ([]byte, error) {
 	f := excelize.NewFile()
 	defer f.Close()

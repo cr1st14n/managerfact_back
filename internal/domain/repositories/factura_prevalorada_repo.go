@@ -9,16 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// LoteResumen agrega las facturas prevaloradas de un mismo lote de
-// importación, con el contexto con el que se cargó (sucursal, tipo) y el
-// desglose de estados de envío.
 type LoteResumen struct {
 	LoteID                   string `json:"lote_id"`
 	SucursalFacturadorID     uint   `json:"sucursal_facturador_id"`
 	SucursalFacturadorNombre string `json:"sucursal_facturador_nombre"`
-	// CodigoSucursalSin no se serializa: solo se usa para filtrar el lote por
-	// las sucursales permitidas del usuario (ver
-	// FacturaPrevaloradaService.ListarLotes).
+		// CodigoSucursalSin solo filtra por permisos y no forma parte de la respuesta.
 	CodigoSucursalSin int       `json:"-"`
 	Tipo              string    `json:"tipo"`
 	Observacion       string    `json:"observacion"`
@@ -46,8 +41,6 @@ func (r *FacturaPrevaloradaRepository) Create(factura *models.FacturaPrevalorada
 	return nil
 }
 
-// CreateBatch inserta todas las filas válidas de una importación en una sola
-// transacción.
 func (r *FacturaPrevaloradaRepository) CreateBatch(facturas []models.FacturaPrevalorada) error {
 	if len(facturas) == 0 {
 		return nil
@@ -58,9 +51,6 @@ func (r *FacturaPrevaloradaRepository) CreateBatch(facturas []models.FacturaPrev
 	return nil
 }
 
-// Update guarda el resultado del envío al facturador (etapa 2): solo toca
-// las columnas de seguimiento, nunca los datos importados en la etapa 1 ni
-// la asociación SucursalFacturador.
 func (r *FacturaPrevaloradaRepository) Update(factura *models.FacturaPrevalorada) error {
 	err := r.db.Model(&models.FacturaPrevalorada{}).Where("id = ?", factura.ID).Updates(map[string]interface{}{
 		"estado":            factura.Estado,
@@ -90,8 +80,6 @@ func (r *FacturaPrevaloradaRepository) GetByID(id uint) (*models.FacturaPrevalor
 	return &factura, nil
 }
 
-// GetAll lista facturas prevaloradas, filtrando opcionalmente por estado y/o
-// lote_id (ambos vacíos = sin filtro).
 func (r *FacturaPrevaloradaRepository) GetAll(estado, loteID string) ([]models.FacturaPrevalorada, error) {
 	facturas := []models.FacturaPrevalorada{}
 	query := r.db.Preload("SucursalFacturador")
@@ -107,9 +95,7 @@ func (r *FacturaPrevaloradaRepository) GetAll(estado, loteID string) ([]models.F
 	return facturas, nil
 }
 
-// GetPendientesParaEnvio lista las facturas pendientes en el orden en que el
-// EnvioWorker debe procesarlas: agrupadas por sucursal (para poder aplicar
-// el circuit breaker por sucursal) y luego por lote/orden de creación.
+// El orden agrupa por sucursal para aplicar el circuit breaker y luego por lote/creación.
 func (r *FacturaPrevaloradaRepository) GetPendientesParaEnvio() ([]models.FacturaPrevalorada, error) {
 	facturas := []models.FacturaPrevalorada{}
 	err := r.db.Preload("SucursalFacturador").
@@ -122,8 +108,6 @@ func (r *FacturaPrevaloradaRepository) GetPendientesParaEnvio() ([]models.Factur
 	return facturas, nil
 }
 
-// GetLotes agrega las facturas prevaloradas por lote_id: sucursal/tipo con
-// los que se cargó el lote, total de filas y desglose por estado.
 func (r *FacturaPrevaloradaRepository) GetLotes() ([]LoteResumen, error) {
 	lotes := []LoteResumen{}
 	err := r.db.Table("facturas_prevaloradas AS fp").

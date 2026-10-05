@@ -21,7 +21,6 @@ type loginRequest struct {
 	Password      string `json:"password"`
 }
 
-// Login valida codigo_usuario + password y devuelve un JWT de sesión.
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var req loginRequest
 	if err := c.BodyParser(&req); err != nil {

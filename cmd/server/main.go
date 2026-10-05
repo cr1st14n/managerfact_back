@@ -20,7 +20,6 @@ import (
 	gormLogger "gorm.io/gorm/logger"
 )
 
-// Config estructura de configuración
 type Config struct {
 	DBHost     string
 	DBUser     string
@@ -31,9 +30,8 @@ type Config struct {
 	ServerPort string
 }
 
-// LoadConfig carga la configuración desde variables de entorno
 func LoadConfig() *Config {
-	// Cargar archivo .env si existe
+
 	if err := godotenv.Load(); err != nil {
 		log.Println("No se encontró archivo .env, usando variables de entorno del sistema")
 	}
@@ -51,7 +49,6 @@ func LoadConfig() *Config {
 	return config
 }
 
-// getEnv obtiene una variable de entorno o retorna un valor por defecto
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -59,7 +56,6 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// InitDatabase inicializa la conexión a PostgreSQL
 func InitDatabase(config *Config) *gorm.DB {
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=America/La_Paz",
@@ -77,23 +73,7 @@ func InitDatabase(config *Config) *gorm.DB {
 	return db
 }
 
-// MigrarFechasPrevaloradaADate convierte fecha_emision/fecha_compra_boleto
-// de facturas_prevaloradas de timestamptz (el default que le daba GORM a
-// time.Time) a date: son fechas de calendario puras que vienen del Excel,
-// sin hora. Con timestamptz y la sesión en America/La_Paz (UTC-4, ver
-// InitDatabase), una fecha guardada como medianoche se leía un día para
-// atrás. Corre antes de AutoMigrate y solo si la columna todavía es
-// timestamptz (no-op en instalaciones nuevas, donde AutoMigrate crea la
-// tabla directo con date).
-//
-// El cast usa "AT TIME ZONE 'UTC'", no la zona de la sesión: las fechas ya
-// guardadas se parsearon siempre como medianoche UTC (ver parsearFecha en
-// aplication/services/factura_prevalorada_service.go), así que extraer la
-// fecha en UTC recupera el valor original tal cual se importó. Un
-// "ALTER COLUMN TYPE date" sin USING dejaría que Postgres use su cast
-// implícito timestamptz->date, que sí usa la zona de la sesión — y
-// corrompería en la migración misma los datos ya importados con el mismo
-// corrimiento que se está arreglando.
+// Migrar con AT TIME ZONE 'UTC': el cast implícito usa UTC-4 y desplaza un día las fechas importadas.
 func MigrarFechasPrevaloradaADate(db *gorm.DB) error {
 	var tipoActual string
 	err := db.Raw(`
@@ -120,7 +100,6 @@ func MigrarFechasPrevaloradaADate(db *gorm.DB) error {
 	return nil
 }
 
-// AutoMigrate ejecuta las migraciones automáticas
 func AutoMigrate(db *gorm.DB) error {
 	if err := MigrarFechasPrevaloradaADate(db); err != nil {
 		return err
@@ -149,17 +128,14 @@ func AutoMigrate(db *gorm.DB) error {
 	return nil
 }
 
-// SeedDatabase agrega datos iniciales si es necesario
 func SeedDatabase(db *gorm.DB) error {
 	log.Println("Verificando datos iniciales...")
 
-	// Verificar si ya existen conexiones
 	var count int64
 	if err := db.Model(&models.DbConnection{}).Count(&count).Error; err != nil {
 		return fmt.Errorf("error verificando datos existentes: %v", err)
 	}
 
-	// Si no hay datos, agregar conexiones de ejemplo (opcional)
 	if count == 0 {
 		log.Println("No se encontraron conexiones, agregando datos de ejemplo...")
 
@@ -198,15 +174,6 @@ func SeedDatabase(db *gorm.DB) error {
 	return nil
 }
 
-// SeedRegionalesYSucursales siembra el catálogo de regionales y sucursales
-// (transcrito de doc/sucursales.md). Corre en cada arranque y usa
-// FirstOrCreate por cada regional (por nombre, único) y cada sucursal (por
-// codigo_sucursal_sin, único) en vez de saltarse todo si ya hay datos: así,
-// si se agrega una sucursal nueva a este catálogo más adelante (como pasó
-// con el código 0 "Oficina Central"), el próximo reinicio la crea sola sin
-// duplicar ni tocar las que ya existen. Pendiente de validar contra
-// SFE_SUCURSAL en producción, tal como advierte el propio documento de
-// origen.
 func SeedRegionalesYSucursales(db *gorm.DB) error {
 	type sucursalSeed struct {
 		Codigo int
@@ -231,8 +198,7 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 			{13, "Puerto Suárez"}, {12, "Vallegrande"}, {18, "Ascensión de Guarayos"},
 			{16, "San José Chiquitos"}, {9, "San Matías"},
 		},
-		// San Ramón (Beni) no tiene código SIN visible en la tarjeta fuente,
-		// así que queda fuera del catálogo hasta confirmarlo.
+
 		"Beni": {
 			{1, "Trinidad"}, {22, "Santa Ana de Yacuma"}, {23, "San Ignacio de Moxos"},
 			{21, "Magdalena"}, {34, "Riberalta"}, {32, "Santa Rosa"}, {20, "Guarayamerín"},
@@ -252,10 +218,7 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 				Nombre:            s.Nombre,
 				RegionalID:        regional.ID,
 			}
-			// Condición como string+args (no struct): un Where con struct
-			// omite los campos en su valor cero, y codigo_sucursal_sin=0
-			// ("Oficina Central") es justamente ese caso — con struct nunca
-			// se filtraría por código y quedaría sin sembrar.
+
 			if err := db.Where("codigo_sucursal_sin = ?", s.Codigo).FirstOrCreate(&sucursal).Error; err != nil {
 				return fmt.Errorf("error creando sucursal %s: %v", s.Nombre, err)
 			}
@@ -266,7 +229,6 @@ func SeedRegionalesYSucursales(db *gorm.DB) error {
 	return nil
 }
 
-// SetupRoutes configura todas las rutas de la API
 func SetupRoutes(
 	app *fiber.App,
 	authHandler *handlers.AuthHandler,
@@ -282,20 +244,18 @@ func SetupRoutes(
 	logEnvioHandler *handlers.LogEnvioHandler,
 	resumenContableHandler *handlers.ResumenContableHandler,
 ) {
-	// Middleware global
+
 	app.Use(logger.New(logger.Config{
 		Format: "[${ip}]:${port} ${status} - ${method} ${path} - ${latency}\n",
 	}))
 	app.Use(recover.New())
 
-	// CORS middleware
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
 	}))
 
-	// Ruta raíz
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"message": "Invoice System API",
@@ -307,10 +267,8 @@ func SetupRoutes(
 		})
 	})
 
-	// Grupo de rutas API
 	api := app.Group("/api/v1")
 
-	// Ruta de health check (pública)
 	api.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -318,71 +276,46 @@ func SetupRoutes(
 		})
 	})
 
-	// Login (público)
 	authHandler.RegisterRoutes(api)
 
-	// Todo lo demás requiere sesión (JWT) — ver
-	// infraestructura/middleware/auth_middleware.go
 	protegido := api.Group("/", middleware.RequireAuth())
 
-	// Usuarios y Sucursales Facturador además requieren rol "admin": los
-	// operadores no pueden ver ni operar estos dos módulos. El middleware se
-	// pasa directo a cada RegisterRoutes para que quede scopeado a sus
-	// propios prefijos (/usuarios, /sucursales-facturador, etc.) — un grupo
-	// con prefijo "/" aplicaría el middleware a TODO el resto de rutas
-	// protegidas, no solo a estas dos.
 	requireAdmin := middleware.RequireAdmin(usuarioService)
 
-	// El rol "consultas" solo puede ver Reportes y DUAS Monitor (rutas de
-	// consultasHandler) y sus dependencias de solo lectura (codigoproducto,
-	// listado de conexiones). Se bloquea con requireNoConsultas: Facturación
-	// completa (prevaloradas/anulación/logs), Sucursales Facturador, y la
-	// escritura de Conexiones. Igual que requireAdmin, se pasa directo a
-	// cada RegisterRoutes para quedar scopeado a sus propios prefijos.
+		// Mantener requireNoConsultas scopeado a rutas de consulta y dependencias de solo lectura.
 	requireNoConsultas := middleware.RequireNoConsultas(usuarioService)
 
-	// Registrar rutas de conexiones de BD (el listado queda abierto a
-	// cualquier autenticado porque Reportes/DUAS Monitor lo necesitan para
-	// elegir la base; el resto de la gestión es solo admin)
 	dbConnectionHandler.RegisterRoutes(protegido, requireAdmin)
-	// Copia local de sucursales por conexión (actualizar/resumen, solo admin)
+
 	conexionSucursalHandler.RegisterRoutes(protegido, requireAdmin)
-	// Registrar rutas de consultas
+
 	consultasHandler.RegisterRoutes(protegido)
-	// Registrar rutas de resumen contable (Libro Ventas IVA y lo que se
-	// agregue después de ClicReportes.md); mismo acceso que consultas, cada
-	// reporte exige acceso total puertas adentro porque junta sucursales.
 	resumenContableHandler.RegisterRoutes(protegido)
-	// Registrar rutas de codigo producto (listado abierto, gestión solo admin)
+
 	codigoProductoHandler.RegisterRoutes(protegido, requireAdmin)
-	// Registrar rutas de usuarios/regionales/catálogo de sucursales (solo admin)
+
 	usuarioHandler.RegisterRoutes(protegido, requireAdmin)
-	// Registrar rutas de sucursales facturador (FacturaClic) (solo admin,
-	// y bloqueado por completo a "consultas")
+
 	sucursalFacturadorHandler.RegisterRoutes(protegido, requireAdmin, requireNoConsultas)
-	// Registrar rutas de facturas prevaloradas (boletos) (bloqueado a "consultas")
+
 	facturaPrevaloradaHandler.RegisterRoutes(protegido, requireNoConsultas)
-	// Registrar rutas de facturas de anulación (bloqueado a "consultas")
+
 	facturaAnulacionHandler.RegisterRoutes(protegido, requireNoConsultas)
-	// Registrar rutas de logs de envío (bloqueado a "consultas")
+
 	logEnvioHandler.RegisterRoutes(protegido, requireNoConsultas)
 }
 
 func main() {
 	log.Println("Iniciando Invoice System API...")
 
-	// Cargar configuración
 	config := LoadConfig()
 
-	// Inicializar base de datos
 	db := InitDatabase(config)
 
-	// Ejecutar migraciones
 	if err := AutoMigrate(db); err != nil {
 		log.Fatalf("Error en migraciones: %v", err)
 	}
 
-	// Agregar datos iniciales (opcional)
 	if err := SeedDatabase(db); err != nil {
 		log.Printf("Advertencia en seed de datos: %v", err)
 	}
@@ -390,21 +323,16 @@ func main() {
 		log.Printf("Advertencia en seed de regionales/sucursales: %v", err)
 	}
 
-	// Inicializar dependencias (Dependency Injection)
 	dbConnectionRepo := repositories.NewDbConnectionRepository(db)
 	dbConnectionService := services.NewDbConnectionService(dbConnectionRepo)
 	dbConnectionHandler := handlers.NewDbConnectionHandler(dbConnectionService)
 
-	// usuarios (antes de consultas: ConsultasHandler necesita usuarioService
-	// para verificar accesos por sucursal)
 	usuarioRepo := repositories.NewUsuarioRepository(db)
 	usuarioService := services.NewUsuarioService(usuarioRepo)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
 
-	// login / sesión
 	authHandler := handlers.NewAuthHandler(usuarioService)
 
-	// Iniciar consultas
 	consultasRepositori := repositories.NewConsutasRepository(db)
 	conexionSucursalRepo := repositories.NewConexionSucursalRepo(db)
 	conexionSucursalService := services.NewConexionSucursalService(dbConnectionRepo, conexionSucursalRepo)
@@ -412,39 +340,31 @@ func main() {
 	consultaHandler := services.NewConsultasService(consultasRepositori, usuarioRepo, conexionSucursalRepo)
 	consultasHandler := handlers.NewConsultasHandler(consultaHandler, usuarioService)
 
-	// resumen contable (Libro Ventas IVA es el primer reporte del módulo)
 	resumenContableService := services.NewResumenContableService(consultasRepositori)
 	resumenContableHandler := handlers.NewResumenContableHandler(resumenContableService, usuarioService)
 
-	// codigo producto
 	codigoProductoRepo := repositories.NewCodigoProductoRepoRepo(db)
 	codigoProductoService := services.NewCodigoProductoService(codigoProductoRepo)
 	codigoProductoHandler := handlers.NewCodigoProductoHandler(codigoProductoService)
 
-	// sucursales facturador (FacturaClic)
 	sucursalFacturadorRepo := repositories.NewSucursalFacturadorRepository(db)
 	sucursalFacturadorService := services.NewSucursalFacturadorService(sucursalFacturadorRepo)
 	sucursalFacturadorHandler := handlers.NewSucursalFacturadorHandler(sucursalFacturadorService)
 
-	// logs de envío (registro de intentos, manuales y automáticos)
 	logEnvioRepo := repositories.NewLogEnvioRepository(db)
 	logEnvioHandler := handlers.NewLogEnvioHandler(logEnvioRepo)
 
-	// facturas prevaloradas (boletos)
 	facturaPrevaloradaRepo := repositories.NewFacturaPrevaloradaRepository(db)
 	facturaPrevaloradaService := services.NewFacturaPrevaloradaService(facturaPrevaloradaRepo, sucursalFacturadorRepo, logEnvioRepo, usuarioService)
 	facturaPrevaloradaHandler := handlers.NewFacturaPrevaloradaHandler(facturaPrevaloradaService)
 
-	// facturas de anulación
 	facturaAnulacionRepo := repositories.NewFacturaAnulacionRepository(db)
 	facturaAnulacionService := services.NewFacturaAnulacionService(facturaAnulacionRepo, sucursalFacturadorRepo, logEnvioRepo, usuarioService)
 	facturaAnulacionHandler := handlers.NewFacturaAnulacionHandler(facturaAnulacionService)
 
-	// envío automático de pendientes (prevaloradas + anulación) en background
 	envioWorker := services.NewEnvioWorker(facturaPrevaloradaService, facturaAnulacionService)
 	go envioWorker.Iniciar()
 
-	// Configurar Fiber
 	app := fiber.New(fiber.Config{
 		AppName:      "Invoice System API v1.0.0",
 		ServerHeader: "Invoice System",
@@ -462,10 +382,8 @@ func main() {
 		},
 	})
 
-	// Configurar rutas
 	SetupRoutes(app, authHandler, usuarioService, dbConnectionHandler, consultasHandler, codigoProductoHandler, conexionSucursalHandler, usuarioHandler, sucursalFacturadorHandler, facturaPrevaloradaHandler, facturaAnulacionHandler, logEnvioHandler, resumenContableHandler)
 
-	// Iniciar servidor
 	port := ":" + config.ServerPort
 	log.Printf("Servidor ejecutándose en puerto %s", config.ServerPort)
 	log.Printf("Endpoints disponibles:")

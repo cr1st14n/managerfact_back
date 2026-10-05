@@ -24,14 +24,6 @@ func NewConsultasHandler(s *services.ConsultasService, usuarioService *services.
 	}
 }
 
-// verificarAccesoSucursal exige que el usuario autenticado (usuario_id
-// puesto en Locals por middleware.RequireAuth) tenga permiso sobre el
-// codigoSucursalSin solicitado. Si viene vacío, solo se permite a usuarios
-// con acceso total — no se puede pedir "todas las sucursales" sin tenerlo.
-// Devuelve true si el acceso es válido. Si es false, ya escribió la
-// respuesta de error en c y el caller debe cortar sin llamar a c.JSON de
-// nuevo (y sin devolver un error a Fiber, que lo pisaría con un 500 vía el
-// ErrorHandler global).
 func (h *ConsultasHandler) verificarAccesoSucursal(c *fiber.Ctx, codigoSucursalSin string) bool {
 	usuarioID, ok := c.Locals(middleware.UsuarioIDLocal).(uint)
 	if !ok {
@@ -146,7 +138,7 @@ func (h *ConsultasHandler) Sucursales(c *fiber.Ctx) error {
 		"message": "Sucursales registradas",
 		"data":    data,
 	})
-	// return nil
+
 }
 
 func (h *ConsultasHandler) BuscarDuas(c *fiber.Ctx) error {
@@ -181,8 +173,6 @@ func (h *ConsultasHandler) BuscarDuas(c *fiber.Ctx) error {
 	})
 }
 
-// FacturasMes devuelve las facturas verificadas de un mes para una sucursal y
-// un código de producto (base de la descarga mensual a Excel).
 func (h *ConsultasHandler) FacturasMes(c *fiber.Ctx) error {
 	idServer, errSrv := strconv.ParseInt(c.Query("idServer"), 10, 64)
 	idSucursal, errSuc := strconv.Atoi(c.Query("sucursal"))

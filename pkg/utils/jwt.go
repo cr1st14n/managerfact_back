@@ -9,10 +9,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// ClaimsUsuario es el contenido del JWT de sesión: solo el ID del usuario,
-// todo lo demás (accesos, acceso_total) se resuelve en cada request contra
-// la BD, así un cambio de accesos aplica de inmediato sin esperar a que el
-// token expire.
 type ClaimsUsuario struct {
 	UsuarioID uint `json:"usuario_id"`
 	jwt.RegisteredClaims
@@ -34,7 +30,6 @@ func horasExpiracion() time.Duration {
 	return time.Duration(horas) * time.Hour
 }
 
-// GenerarTokenJWT firma un token de sesión para el usuario dado.
 func GenerarTokenJWT(usuarioID uint) (string, error) {
 	clave, err := claveJWT()
 	if err != nil {
@@ -57,8 +52,6 @@ func GenerarTokenJWT(usuarioID uint) (string, error) {
 	return firmado, nil
 }
 
-// ValidarTokenJWT valida la firma y expiración de un token y devuelve sus
-// claims.
 func ValidarTokenJWT(tokenString string) (*ClaimsUsuario, error) {
 	clave, err := claveJWT()
 	if err != nil {

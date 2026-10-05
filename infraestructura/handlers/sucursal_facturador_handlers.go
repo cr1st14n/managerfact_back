@@ -19,14 +19,11 @@ func NewSucursalFacturadorHandler(s *services.SucursalFacturadorService) *Sucurs
 
 type sucursalFacturadorRequest struct {
 	Nombre string `json:"nombre"`
-	// CodigoSucursalSin es *int (no int) porque 0 es un código SIN válido
-	// ("Oficina Central") — así se distingue "no vino en el request" (nil)
-	// de "vino como 0" al validar, en vez de tratar 0 como campo vacío.
+
 	CodigoSucursalSin *int   `json:"codigo_sucursal_sin"`
 	PuntoVentaEmisor  string `json:"punto_venta_emisor"`
 	UrlLinkFacturador string `json:"url_link_facturador"`
-	// TokenAcceso solo se lee al crear; en Update se ignora aunque venga en
-	// el body (el token no se puede modificar una vez registrado).
+
 	TokenAcceso     string `json:"token_acceso"`
 	CodigoMonedaBob string `json:"codigo_moneda_bob"`
 	CodigoCI        string `json:"codigo_ci"`
@@ -34,8 +31,6 @@ type sucursalFacturadorRequest struct {
 	Activo          *bool  `json:"activo,omitempty"`
 }
 
-// sucursalFacturadorResponse envuelve el modelo sin exponer nunca el token
-// cifrado/plano, indicando solo si ya hay uno configurado.
 type sucursalFacturadorResponse struct {
 	models.SucursalFacturador
 	TokenConfigurado bool `json:"token_configurado"`
@@ -184,11 +179,6 @@ func (h *SucursalFacturadorHandler) Delete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Sucursal facturador eliminada exitosamente"})
 }
 
-// RegisterRoutes registra las rutas bajo /sucursales-facturador. Listar
-// (GetAll) es visible para cualquier usuario autenticado (lo necesitan al
-// elegir la sucursal antes de importar un Excel); crear/editar/eliminar y
-// GetByID siguen detrás de requireAdmin — los operadores no pueden operar
-// este módulo, solo consultar el listado.
 func (h *SucursalFacturadorHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler, requireNoConsultas fiber.Handler) {
 	sucursales := router.Group("/sucursales-facturador", requireNoConsultas)
 	sucursales.Get("/", h.GetAll)

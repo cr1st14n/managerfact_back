@@ -49,9 +49,7 @@ func (r *CodigoProductoRepo) Update(data *models.Codigo_producto) error {
 	return r.db.Save(data).Error
 }
 
-// Delete borra de forma definitiva (Unscoped): el índice único de "codigo"
-// también cuenta las filas con borrado lógico, así que un soft delete
-// impediría volver a crear el mismo código después.
+// El borrado debe ser definitivo: el índice único también incluye filas con soft delete.
 func (r *CodigoProductoRepo) Delete(id uint) error {
 	result := r.db.Unscoped().Delete(&models.Codigo_producto{}, id)
 	if result.Error != nil {
@@ -63,8 +61,6 @@ func (r *CodigoProductoRepo) Delete(id uint) error {
 	return nil
 }
 
-// ExisteCodigo indica si otro registro (distinto de excluirID) ya usa ese
-// código. excluirID = 0 al crear.
 func (r *CodigoProductoRepo) ExisteCodigo(codigo string, excluirID uint) (bool, error) {
 	var count int64
 	err := r.db.Unscoped().Model(&models.Codigo_producto{}).

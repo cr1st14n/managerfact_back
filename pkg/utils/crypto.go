@@ -12,9 +12,6 @@ import (
 	"strings"
 )
 
-// claveCifrado deriva una clave AES-256 a partir de cualquier texto plano
-// en la variable de entorno FACTURADOR_TOKEN_KEY (sin necesidad de base64
-// ni de que tenga exactamente 32 bytes: se le aplica SHA-256).
 func claveCifrado() ([]byte, error) {
 	texto := strings.TrimSpace(os.Getenv("FACTURADOR_TOKEN_KEY"))
 	if texto == "" {
@@ -24,8 +21,6 @@ func claveCifrado() ([]byte, error) {
 	return clave[:], nil
 }
 
-// Encrypt cifra un texto plano con AES-256-GCM y devuelve el resultado
-// (nonce + ciphertext) codificado en base64.
 func Encrypt(texto string) (string, error) {
 	clave, err := claveCifrado()
 	if err != nil {
@@ -51,7 +46,6 @@ func Encrypt(texto string) (string, error) {
 	return base64.StdEncoding.EncodeToString(cifrado), nil
 }
 
-// Decrypt descifra un valor generado por Encrypt.
 func Decrypt(textoCifrado string) (string, error) {
 	clave, err := claveCifrado()
 	if err != nil {

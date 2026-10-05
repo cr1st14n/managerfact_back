@@ -35,8 +35,6 @@ type CrearUsuarioInput struct {
 	SucursalID    *uint
 }
 
-// Crear registra un usuario nuevo. La contraseña inicial es siempre su CI
-// (hasheada), tal como se pidió: "pass por defecto el CI".
 func (s *UsuarioService) Crear(input CrearUsuarioInput) (*models.Usuario, error) {
 	passwordHash, err := hashPassword(input.CI)
 	if err != nil {
@@ -93,7 +91,6 @@ func (s *UsuarioService) Actualizar(input ActualizarUsuarioInput) (*models.Usuar
 	return usuario, nil
 }
 
-// ResetPassword restablece la contraseña del usuario a su CI actual.
 func (s *UsuarioService) ResetPassword(id uint) error {
 	usuario, err := s.repo.GetByID(id)
 	if err != nil {
@@ -141,41 +138,28 @@ func (s *UsuarioService) ObtenerAccesos(usuarioID uint) (*repositories.AccesosRe
 	return s.repo.GetAccesos(usuarioID)
 }
 
-// SucursalesPermitidas resuelve qué sucursales del catálogo puede ver un
-// usuario (todo el catálogo si tiene acceso total).
 func (s *UsuarioService) SucursalesPermitidas(usuarioID uint) ([]models.SucursalCatalogo, error) {
 	return s.repo.SucursalesPermitidas(usuarioID)
 }
 
-// TieneAccesoSucursal verifica si el usuario puede acceder a la sucursal
-// identificada por su código SIN — usado al filtrar consultas de facturas
-// por sucursal (ver ConsultasHandler.DataFacturas).
 func (s *UsuarioService) TieneAccesoSucursal(usuarioID uint, codigoSucursalSin int) (bool, error) {
 	return s.repo.TieneAccesoSucursal(usuarioID, codigoSucursalSin)
 }
 
-// TieneAccesoTotal indica si el usuario tiene acceso nacional (bypass de
-// sucursales_permitidas_codigos).
 func (s *UsuarioService) TieneAccesoTotal(usuarioID uint) (bool, error) {
 	return s.repo.TieneAccesoTotal(usuarioID)
 }
 
-// EsAdmin indica si el usuario tiene rol "admin".
 func (s *UsuarioService) EsAdmin(usuarioID uint) (bool, error) {
 	return s.repo.EsAdmin(usuarioID)
 }
 
-// EsConsultas indica si el usuario tiene rol "consultas".
 func (s *UsuarioService) EsConsultas(usuarioID uint) (bool, error) {
 	return s.repo.EsConsultas(usuarioID)
 }
 
-// ErrCredencialesInvalidas se devuelve cuando el código de usuario no existe,
-// la contraseña no coincide, o el usuario está inactivo — mismo mensaje
-// genérico en los 3 casos para no filtrar cuáles códigos de usuario existen.
 var ErrCredencialesInvalidas = errors.New("usuario o contraseña incorrectos")
 
-// Login verifica codigo_usuario + password contra el hash guardado.
 func (s *UsuarioService) Login(codigoUsuario, password string) (*models.Usuario, error) {
 	usuario, err := s.repo.GetByCodigoUsuario(codigoUsuario)
 	if err != nil {

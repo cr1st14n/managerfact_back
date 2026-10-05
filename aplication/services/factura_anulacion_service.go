@@ -16,8 +16,6 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// ErrAnulacionYaAceptada se devuelve al intentar anular un registro que el
-// facturador ya aceptó — reenviarlo no tiene efecto y solo generaría ruido.
 var ErrAnulacionYaAceptada = errors.New("esta anulación ya fue aceptada por el facturador, no se puede reenviar")
 
 type FacturaAnulacionService struct {
@@ -36,16 +34,8 @@ func NewFacturaAnulacionService(
 	return &FacturaAnulacionService{repo: r, sucursalFacturador: sucursalFacturadorRepo, logEnvio: logEnvioRepo, usuarioService: usuarioService}
 }
 
-// columnasEsperadasAnulacion son los encabezados de columna del Excel de
-// anulación (ver doc/EnvioFacturacion.md sección 4). codigo_integracion es
-// el de la factura original a anular — a diferencia de la prevalorada, acá
-// no se genera: viene del Excel.
 var columnasEsperadasAnulacion = []string{"cuf", "codigo_motivo", "codigo_integracion"}
 
-// ImportarExcelAnulacion parsea un archivo .xlsx de anulaciones y guarda las
-// filas válidas como facturas_anulacion en estado "pendiente", todas
-// fijadas a la sucursalFacturadorID elegida antes de importar. Las filas
-// inválidas se reportan pero no abortan el archivo completo.
 func (s *FacturaAnulacionService) ImportarExcel(usuarioID uint, archivo io.Reader, sucursalFacturadorID uint, observacion string) (*ImportarExcelResultado, error) {
 	sucursal, err := s.sucursalFacturador.GetByID(sucursalFacturadorID)
 	if err != nil {
@@ -94,7 +84,7 @@ func (s *FacturaAnulacionService) ImportarExcel(usuarioID uint, archivo io.Reade
 	conError := []FilaConError{}
 
 	for i, fila := range filas[1:] {
-		numeroFila := i + 2 // +1 por índice base 0, +1 por la fila de encabezado
+		numeroFila := i + 2 
 		factura, err := parsearFilaAnulacion(fila, indiceColumna, sucursalFacturadorID, loteID, observacion)
 		if err != nil {
 			conError = append(conError, FilaConError{Fila: numeroFila, Motivo: err.Error()})
@@ -159,12 +149,6 @@ func (s *FacturaAnulacionService) ObtenerPorID(usuarioID, id uint) (*models.Fact
 	return factura, nil
 }
 
-// Anular arma el JSON de la solicitud de anulación (CUF + motivo + sucursal
-// facturador) y lo envía a clic-core/facturas/anular (ver
-// doc/EnvioFacturacion.md secciones 4 y 5). Guarda el resultado del intento
-// (aceptado/rechazado/error) incluso si la llamada falla, para no perder el
-// rastro del envío. origen es "manual" (botón del front) o "automatico"
-// (EnvioWorker) — solo se usa para el registro en logs_envio.
 func (s *FacturaAnulacionService) Anular(id uint, origen string) (*models.FacturaAnulacion, error) {
 	factura, err := s.repo.GetByID(id)
 	if err != nil {
@@ -196,9 +180,7 @@ func (s *FacturaAnulacionService) Anular(id uint, origen string) (*models.Factur
 		if guardarErr := s.repo.Update(factura); guardarErr != nil {
 			return nil, guardarErr
 		}
-		// Error de transporte (no de negocio): la sucursal facturador queda
-		// "en_revision" para que el EnvioWorker deje de insistir con ella
-		// hasta que vuelva a responder — ver doc/EnvioFacturacion.md sección 5.
+
 		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "en_revision", err.Error(), &fechaRespuesta); marcarErr != nil {
 			log.Printf("[FacturaAnulacionService] error marcando sucursal %d en_revision: %v", factura.SucursalFacturadorID, marcarErr)
 		}
@@ -206,8 +188,6 @@ func (s *FacturaAnulacionService) Anular(id uint, origen string) (*models.Factur
 		return factura, fmt.Errorf("error enviando la anulación al facturador: %w", err)
 	}
 
-	// El facturador respondió (aceptado o rechazado): la sucursal está
-	// alcanzable, así que si estaba "en_revision" se recupera sola.
 	if factura.SucursalFacturador.EstadoConexion == "en_revision" {
 		if marcarErr := s.sucursalFacturador.ActualizarEstadoConexion(factura.SucursalFacturadorID, "activo", "", nil); marcarErr != nil {
 			log.Printf("[FacturaAnulacionService] error marcando sucursal %d activa: %v", factura.SucursalFacturadorID, marcarErr)
@@ -230,8 +210,6 @@ func (s *FacturaAnulacionService) Anular(id uint, origen string) (*models.Factur
 	return factura, nil
 }
 
-// registrarLog guarda el intento en logs_envio; un fallo acá no debe abortar
-// el flujo de anulación, solo se loguea a consola.
 func (s *FacturaAnulacionService) registrarLog(facturaID uint, codigoIntegracion string, sucursalFacturadorID uint, origen, resultado, mensaje string) {
 	entrada := &models.LogEnvio{
 		Tipo:                 "anulacion",
@@ -247,8 +225,6 @@ func (s *FacturaAnulacionService) registrarLog(facturaID uint, codigoIntegracion
 	}
 }
 
-// ListarTodos devuelve solo las facturas de anulación de sucursales que el
-// usuario tiene permitidas (ver codigosSucursalPermitidos).
 func (s *FacturaAnulacionService) ListarTodos(usuarioID uint, estado, loteID string) ([]models.FacturaAnulacion, error) {
 	facturas, err := s.repo.GetAll(estado, loteID)
 	if err != nil {
@@ -273,15 +249,10 @@ func (s *FacturaAnulacionService) ListarTodos(usuarioID uint, estado, loteID str
 	return visibles, nil
 }
 
-// ListarPendientesParaEnvio expone las facturas de anulación pendientes
-// para el EnvioWorker, en el orden en que deben procesarse.
 func (s *FacturaAnulacionService) ListarPendientesParaEnvio() ([]models.FacturaAnulacion, error) {
 	return s.repo.GetPendientesParaEnvio()
 }
 
-// ListarLotes agrega las facturas de anulación por lote de importación,
-// filtrando a las sucursales permitidas del usuario; el detalle de cada
-// lote se obtiene después con ListarTodos(usuarioID, "", loteID).
 func (s *FacturaAnulacionService) ListarLotes(usuarioID uint) ([]repositories.LoteResumenAnulacion, error) {
 	lotes, err := s.repo.GetLotes()
 	if err != nil {
@@ -304,8 +275,6 @@ func (s *FacturaAnulacionService) ListarLotes(usuarioID uint) ([]repositories.Lo
 	return visibles, nil
 }
 
-// GenerarPlantilla arma el .xlsx de ejemplo con las columnas que espera
-// ImportarExcel, para que el usuario sepa en qué formato cargar el archivo.
 func (s *FacturaAnulacionService) GenerarPlantilla() ([]byte, error) {
 	f := excelize.NewFile()
 	defer f.Close()

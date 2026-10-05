@@ -1,12 +1,6 @@
 package models
 
-// ResumenMensualDebitoFiscal es el "total de control" mensual del Libro de
-// Ventas IVA: una fila por año/mes con el mismo débito fiscal que el libro,
-// pero de TODA la empresa (sin desglosar por sucursal, a diferencia de
-// LibroVentaIvaResumenSucursal). Debe coincidir con la suma de
-// LibroVentaIva y con lo declarado al SIN; si no cuadra, casi siempre es un
-// estado no contemplado o facturas de un mes emitidas en el siguiente
-// (fecha de emisión vs fecha de envío). Ver ClicReportes.md sección 2.
+// Este total debe coincidir con el libro y lo declarado al SIN; revisar fechas de emisión/envío si difiere.
 type ResumenMensualDebitoFiscal struct {
 	Anio             int     `json:"anio" gorm:"column:anio"`
 	Mes              int     `json:"mes" gorm:"column:mes"`

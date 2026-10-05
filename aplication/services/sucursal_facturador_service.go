@@ -54,8 +54,7 @@ type ActualizarSucursalFacturadorInput struct {
 	CodigoSucursalSin int
 	PuntoVentaEmisor  string
 	UrlLinkFacturador string
-	// Sin TokenAcceso a propósito: el token solo se envía al registrar la
-	// sucursal; editar nunca lo toca.
+		// Sin TokenAcceso a propósito: el token solo se envía al registrar la sucursal; editar nunca lo toca.
 	CodigoMonedaBob string
 	CodigoCI        string
 	CodigoNit       string
@@ -95,8 +94,6 @@ func (s *SucursalFacturadorService) ListarTodos() ([]models.SucursalFacturador, 
 	return s.repo.GetAll()
 }
 
-// TokenDescifrado descifra el token en memoria, para uso exclusivo del
-// futuro FacturadorClient al armar la request HTTP saliente.
 func (s *SucursalFacturadorService) TokenDescifrado(id uint) (string, error) {
 	sucursal, err := s.repo.GetByID(id)
 	if err != nil {

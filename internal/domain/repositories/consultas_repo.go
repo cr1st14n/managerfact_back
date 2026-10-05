@@ -24,3 +24,10 @@ func (r *ConsutasRepository) GetServidorById(id int64) (*models.DbConnection, er
 	}
 	return &data, nil
 }
+
+func (r *ConsutasRepository) GetServidoresFacturador(ambiente string) ([]models.DbConnection, error) {
+	var data []models.DbConnection
+	err := r.db.Where("is_active = ? AND LOWER(type) LIKE ? AND ambiente = ?", true, "%facturador%", ambiente).
+		Order("server_name ASC").Find(&data).Error
+	return data, err
+}

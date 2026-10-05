@@ -7,10 +7,9 @@ type Json_consulta_data struct {
 	CodigoProducto  []string `json:"codigoProducto"`
 	FechaDesde      string   `json:"fechaDesde"`
 	FechaHasta      string   `json:"fechaHasta"`
-	// Nit             string `json:"nit"`
+
 	Sucursal string `json:"sucursal"`
 
-	// Filtros adicionales del reporte completo de facturadores
 	CodigoIntegracion     string `json:"codigoIntegracion"`
 	CodigoCliente         string `json:"codigoCliente"`
 	CUF                   string `json:"cuf"`

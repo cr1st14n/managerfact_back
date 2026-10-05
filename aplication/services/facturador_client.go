@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// Payload de POST {url_link_facturador}/clic-core/facturas/recibir-sincrono —
-// ver doc/EnvioFacturacion.md secciones 2 y 5.
-
 type facturadorDatosGenerales struct {
 	NitEmisor                   string   `json:"nitEmisor"`
 	SucursalEmisor              int      `json:"sucursalEmisor"`
@@ -70,8 +67,6 @@ type facturadorRequest struct {
 	DocumentoFiscal facturadorDocumentoFiscal `json:"documentoFiscal"`
 }
 
-// FacturadorRespuesta es la respuesta de recibir-sincrono, tanto de éxito
-// (codigo 200, respuesta "OK") como de rechazo (codigo 400 y similares).
 type FacturadorRespuesta struct {
 	Codigo        int    `json:"codigo"`
 	Respuesta     string `json:"respuesta"`
@@ -81,23 +76,14 @@ type FacturadorRespuesta struct {
 	NumeroFactura int    `json:"numeroFactura"`
 }
 
-// redondear2 limita un monto a 2 decimales: el facturador rechaza montos
-// (montoTotal, montoTotalMoneda, etc.) con 3 o más decimales.
 func redondear2(valor float64) float64 {
 	return math.Round(valor*100) / 100
 }
 
-// zonaLaPaz es la hora de Bolivia: UTC-4 fijo, no observa horario de verano.
+// Bolivia usa UTC-4 sin horario de verano.
 var zonaLaPaz = time.FixedZone("-04:00", -4*60*60)
 
-// calcularFechaEmision arma la fechaEmision que se manda al facturador con
-// tipoEmision=3 (emisión diferida, ver doc/EnvioFacturacion.md "PRUEBA JSON
-// testeado"). Conserva el año/mes/día de factura.FechaEmision tal cual está
-// guardado (sin convertir de huso horario, para no correrlo un día) y le fija
-// hora 10:00:00 en La Paz. Si esa fecha es la de hoy, en cambio usa la hora
-// actual menos 10 minutos, porque el facturador rechaza una fechaEmision en
-// el futuro. Formato con milisegundos (3 dígitos fijos) y offset con dos
-// puntos, igual al que devuelve FacturaClic en sus respuestas.
+// La emisión diferida conserva el día de factura; para hoy usa hora actual menos 10 min porque el facturador rechaza fechas futuras.
 func calcularFechaEmision(fechaEmision time.Time) string {
 	ahora := time.Now().In(zonaLaPaz)
 	var momento time.Time
@@ -109,20 +95,14 @@ func calcularFechaEmision(fechaEmision time.Time) string {
 	return momento.Format("2006-01-02T15:04:05.000-07:00")
 }
 
-// construirPayloadFacturador arma el JSON combinando el boleto (etapa 1) con
-// la configuración de la sucursal facturador y los valores fijos documentados.
-//
-// montoTotal (y precioUnitario/subtotal/montoTotalSujetoIva) van en BOB —
-// factura.TotalBob, ya calculado al importar como costo_dua_dolares * tc.
-// montoTotalMoneda es el monto en la moneda de origen del gasto (dólares).
 func construirPayloadFacturador(factura *models.FacturaPrevalorada, sucursal *models.SucursalFacturador) facturadorRequest {
-	// montoTotalMoneda := redondear2(factura.CostoDuaDolares)
+
 	montoTotal := factura.TotalBob
 	fechaEmision := calcularFechaEmision(factura.FechaEmision)
 
 	return facturadorRequest{
 		DatosGenerales: facturadorDatosGenerales{
-			// NitEmisor:                   sucursal.CodigoNit,
+
 			NitEmisor:                   "419945029",
 			SucursalEmisor:              sucursal.CodigoSucursalSin,
 			PuntoVentaEmisor:            sucursal.PuntoVentaEmisor,
@@ -168,9 +148,6 @@ func construirPayloadFacturador(factura *models.FacturaPrevalorada, sucursal *mo
 	}
 }
 
-// Los servidores FacturaClic de algunas sucursales usan certificados TLS
-// autofirmados o mal encadenados, por eso se omite la verificación del
-// certificado al llamarlos.
 var httpClienteFacturador = &http.Client{
 	Timeout: 30 * time.Second,
 	Transport: &http.Transport{
@@ -178,17 +155,12 @@ var httpClienteFacturador = &http.Client{
 	},
 }
 
-// enviarAFacturador llama a POST {url_link_facturador}/clic-core/facturas/recibir-sincrono
-// con el token de acceso ya descifrado.
 func enviarAFacturador(sucursal *models.SucursalFacturador, factura *models.FacturaPrevalorada, tokenAcceso string) (*FacturadorRespuesta, error) {
 	payload := construirPayloadFacturador(factura, sucursal)
 	url := strings.TrimRight(sucursal.UrlLinkFacturador, "/") + "/clic-core/facturas/recibir-sincrono"
 	return postFacturador(url, payload, tokenAcceso, factura.CodigoIntegracion)
 }
 
-// postFacturador arma y envía el POST JSON contra un endpoint de FacturaClic
-// (recibir-sincrono o anular), logueando request/response crudos para poder
-// depurar el intercambio con el facturador.
 func postFacturador(url string, payload any, tokenAcceso string, codigoIntegracion string) (*FacturadorRespuesta, error) {
 	cuerpo, err := json.Marshal(payload)
 	if err != nil {
@@ -220,18 +192,13 @@ func postFacturador(url string, payload any, tokenAcceso string, codigoIntegraci
 	if err := json.Unmarshal(cuerpoResp, &respuesta); err != nil {
 		return nil, fmt.Errorf("respuesta del facturador no es el JSON esperado (status %d, body %q): %w", resp.StatusCode, cuerpoResp, err)
 	}
-	// Si el facturador respondió sin el campo "mensaje" (formato inesperado),
-	// se guarda el cuerpo crudo para no perder la pista de qué contestó.
+
 	if respuesta.Mensaje == "" {
 		respuesta.Mensaje = fmt.Sprintf("(status %d) %s", resp.StatusCode, string(cuerpoResp))
 	}
 	return &respuesta, nil
 }
 
-// Payload de POST {url_link_facturador}/clic-core/facturas/anular — ver
-// doc/EnvioFacturacion.md sección 4 y 5. NitEmisor va como número (no
-// string) y SucursalEmisor como string: así luce el ejemplo probado en el
-// doc, distinto del formato de recibir-sincrono.
 type anulacionDatosGenerales struct {
 	NitEmisor        json.Number `json:"nitEmisor"`
 	SucursalEmisor   string      `json:"sucursalEmisor"`
@@ -266,8 +233,6 @@ func construirPayloadAnulacion(factura *models.FacturaAnulacion, sucursal *model
 	}
 }
 
-// enviarAAnular llama a POST {url_link_facturador}/clic-core/facturas/anular
-// con el token de acceso ya descifrado.
 func enviarAAnular(sucursal *models.SucursalFacturador, factura *models.FacturaAnulacion, tokenAcceso string) (*FacturadorRespuesta, error) {
 	payload := construirPayloadAnulacion(factura, sucursal)
 	url := strings.TrimRight(sucursal.UrlLinkFacturador, "/") + "/clic-core/facturas/anular"

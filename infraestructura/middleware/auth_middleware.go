@@ -8,13 +8,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// UsuarioIDLocal es la key usada para guardar el usuario_id del token en
-// c.Locals una vez validado por RequireAuth.
 const UsuarioIDLocal = "usuario_id"
 
-// RequireAuth exige un JWT válido en el header Authorization ("Bearer
-// <token>") y deja el usuario_id disponible en c.Locals para los handlers
-// siguientes.
 func RequireAuth() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		header := c.Get("Authorization")
@@ -33,10 +28,6 @@ func RequireAuth() fiber.Handler {
 	}
 }
 
-// RequireAdmin exige que el usuario autenticado (usuario_id ya puesto en
-// Locals por RequireAuth, que debe ir encadenado antes) tenga rol "admin".
-// Usado para bloquear los módulos de Usuarios y Sucursales Facturador a los
-// operadores.
 func RequireAdmin(usuarioService *services.UsuarioService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		usuarioID, ok := c.Locals(UsuarioIDLocal).(uint)
@@ -55,11 +46,7 @@ func RequireAdmin(usuarioService *services.UsuarioService) fiber.Handler {
 	}
 }
 
-// RequireNoConsultas bloquea el acceso a usuarios con rol "consultas" (rol de
-// solo lectura, limitado a Reportes y DUAS Monitor). Usado para proteger
-// Facturación (prevaloradas, anulación, logs de envío), Sucursales
-// Facturador y la escritura de Conexiones — módulos que este rol no debe ver
-// ni operar.
+// requireNoConsultas debe limitar este rol a Reportes/DUAS y dependencias de solo lectura.
 func RequireNoConsultas(usuarioService *services.UsuarioService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		usuarioID, ok := c.Locals(UsuarioIDLocal).(uint)

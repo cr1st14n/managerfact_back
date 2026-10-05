@@ -10,19 +10,12 @@ import (
 	"time"
 )
 
-// errPingNoDisponible: el comando ping no existe en el equipo donde corre el
-// backend, así que no se pudo verificar (no significa que el host no responda).
 var errPingNoDisponible = errors.New("ping no disponible")
 
-// pingHost envía un solo ping ICMP al host. Solo comprueba que el equipo
-// responda: no abre el puerto de SQL Server ni intenta iniciar sesión (eso
-// lo hace el botón "Probar"). Evita que al guardar una conexión fallen cosas
-// ajenas al host, como el certificado TLS del servidor.
+// El ping ICMP evita que guardar una conexión dependa de TLS o SQL Server.
 func pingHost(host string) error {
 	host = strings.TrimSpace(host)
-	// El host viene del formulario del admin y se pasa como argumento de un
-	// proceso: se rechaza todo lo que no sea un nombre o IP simple (opciones
-	// como "-f" o metacaracteres).
+
 	if host == "" || strings.HasPrefix(host, "-") || strings.ContainsAny(host, " \t\r\n;|&$`<>()\\'\"*?") {
 		return fmt.Errorf("host inválido: %q", host)
 	}

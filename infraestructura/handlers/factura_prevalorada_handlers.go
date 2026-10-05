@@ -18,16 +18,11 @@ func NewFacturaPrevaloradaHandler(s *services.FacturaPrevaloradaService) *Factur
 	return &FacturaPrevaloradaHandler{service: s}
 }
 
-// usuarioIDDesdeContexto obtiene el usuario_id puesto en Locals por
-// middleware.RequireAuth, para las validaciones de acceso por sucursal al
-// importar o consultar facturas (prevaloradas y de anulación).
 func usuarioIDDesdeContexto(c *fiber.Ctx) (uint, bool) {
 	usuarioID, ok := c.Locals(middleware.UsuarioIDLocal).(uint)
 	return usuarioID, ok
 }
 
-// ImportarExcel recibe el archivo .xlsx de boletos (multipart, campo
-// "archivo") junto con la sucursal_facturador_id elegida para todo el lote.
 func (h *FacturaPrevaloradaHandler) ImportarExcel(c *fiber.Ctx) error {
 	usuarioID, ok := usuarioIDDesdeContexto(c)
 	if !ok {
@@ -85,9 +80,6 @@ func (h *FacturaPrevaloradaHandler) GetAll(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Facturas prevaloradas obtenidas exitosamente", "data": facturas})
 }
 
-// GetLotes lista el registro de lotes de importación: con qué sucursal
-// facturador y tipo se cargó cada uno, y el desglose de estados de envío.
-// Solo incluye lotes de sucursales permitidas para el usuario autenticado.
 func (h *FacturaPrevaloradaHandler) GetLotes(c *fiber.Ctx) error {
 	usuarioID, ok := usuarioIDDesdeContexto(c)
 	if !ok {
@@ -101,8 +93,6 @@ func (h *FacturaPrevaloradaHandler) GetLotes(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Lotes obtenidos exitosamente", "data": lotes})
 }
 
-// DescargarPlantilla entrega el .xlsx de ejemplo con las columnas esperadas
-// por ImportarExcel.
 func (h *FacturaPrevaloradaHandler) DescargarPlantilla(c *fiber.Ctx) error {
 	contenido, err := h.service.GenerarPlantilla()
 	if err != nil {
@@ -133,11 +123,6 @@ func (h *FacturaPrevaloradaHandler) GetByID(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Factura prevalorada encontrada", "data": factura})
 }
 
-// Facturar dispara el envío síncrono de una factura prevalorada al
-// facturador de su sucursal (etapa 2 del flujo). Antes de enviar, exige que
-// el usuario tenga permiso sobre la sucursal de esta factura — mismo
-// control que GetByID, para que no se pueda facturar por ID una factura de
-// una sucursal fuera de las permitidas.
 func (h *FacturaPrevaloradaHandler) Facturar(c *fiber.Ctx) error {
 	usuarioID, ok := usuarioIDDesdeContexto(c)
 	if !ok {
@@ -162,7 +147,7 @@ func (h *FacturaPrevaloradaHandler) Facturar(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"message": err.Error()})
 		}
 		if factura != nil {
-			// El intento (fallido) ya quedó guardado; se informa el detalle.
+
 			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"message": "Error enviando la factura al facturador", "error": err.Error(), "data": factura})
 		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Error facturando", "error": err.Error()})

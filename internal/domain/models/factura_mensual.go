@@ -2,7 +2,6 @@ package models
 
 import "time"
 
-// FacturaMensual es una fila de la descarga mensual por código de producto.
 type FacturaMensual struct {
 	NumeroFactura     string    `json:"numero_factura" gorm:"column:numero_factura"`
 	FechaEmision      time.Time `json:"fecha_emision" gorm:"column:fecha_emision"`

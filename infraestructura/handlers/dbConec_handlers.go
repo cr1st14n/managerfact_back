@@ -9,19 +9,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// DbConnectionHandler maneja las peticiones relacionadas con conexiones de BD
 type DbConnectionHandler struct {
 	service services.DbConnectionService
 }
 
-// NewDbConnectionHandler crea una nueva instancia del handler
 func NewDbConnectionHandler(service services.DbConnectionService) *DbConnectionHandler {
 	return &DbConnectionHandler{
 		service: service,
 	}
 }
 
-// CreateConnectionRequest estructura para crear conexión
 type CreateConnectionRequest struct {
 	ServerName   string `json:"server_name" validate:"required,min=3,max=100"`
 	Host         string `json:"host" validate:"required"`
@@ -32,11 +29,10 @@ type CreateConnectionRequest struct {
 	IsActive     *bool  `json:"is_active,omitempty"`
 	Description  string `json:"description,omitempty"`
 	Type         string `json:"type" validate:"required,min=1,max=50"`
-	// Ambiente: produccion | baja | test. Vacío = produccion.
+
 	Ambiente string `json:"ambiente,omitempty"`
 }
 
-// UpdateConnectionRequest estructura para actualizar conexión
 type UpdateConnectionRequest struct {
 	ID           uint   `json:"id" validate:"required"`
 	ServerName   string `json:"server_name" validate:"required,min=3,max=100"`
@@ -44,18 +40,15 @@ type UpdateConnectionRequest struct {
 	Port         int    `json:"port" validate:"required,min=1,max=65535"`
 	DatabaseName string `json:"database_name" validate:"required,min=1,max=100"`
 	Username     string `json:"username" validate:"required,min=1,max=100"`
-	// Password es solo de escritura: vacío = conservar la guardada; con valor
-	// = reemplazarla (la conexión se prueba con la nueva antes de guardar).
-	// Nunca se devuelve por la API.
+		// Password vacío conserva la guardada; solo se devuelve tras validar la conexión nueva.
 	Password    string `json:"password,omitempty"`
 	IsActive    *bool  `json:"is_active,omitempty"`
 	Description string `json:"description,omitempty"`
 	Type        string `json:"type" validate:"required,min=1,max=50"`
-	// Ambiente: produccion | baja | test. Vacío = conservar el guardado.
+
 	Ambiente string `json:"ambiente,omitempty"`
 }
 
-// APIResponse estructura estándar de respuesta
 type APIResponse struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message"`
@@ -63,7 +56,6 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-// CreateConnection maneja la creación de nuevas conexiones
 func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 	var req CreateConnectionRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -83,7 +75,6 @@ func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 		})
 	}
 
-	// Convertir request a modelo
 	connection := &models.DbConnection{
 		ServerName:   req.ServerName,
 		Host:         req.Host,
@@ -91,18 +82,16 @@ func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 		DatabaseName: req.DatabaseName,
 		Username:     req.Username,
 		Password:     req.Password,
-		IsActive:     true, // Por defecto activa
+		IsActive:     true, 
 		Description:  req.Description,
 		Type:         req.Type,
 		Ambiente:     ambiente,
 	}
 
-	// Si se especifica is_active, usar ese valor
 	if req.IsActive != nil {
 		connection.IsActive = *req.IsActive
 	}
 
-	// Crear conexión usando el servicio
 	if err := h.service.CreateConnection(connection); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(APIResponse{
 			Success: false,
@@ -118,7 +107,6 @@ func (h *DbConnectionHandler) CreateConnection(c *fiber.Ctx) error {
 	})
 }
 
-// GetConnection obtiene una conexión por ID
 func (h *DbConnectionHandler) GetConnection(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -146,9 +134,8 @@ func (h *DbConnectionHandler) GetConnection(c *fiber.Ctx) error {
 	})
 }
 
-// GetAllConnections obtiene todas las conexiones
 func (h *DbConnectionHandler) GetAllConnections(c *fiber.Ctx) error {
-	// Verificar si solo se quieren las activas
+
 	activeOnly := c.Query("active_only") == "true"
 	tipo := c.Query("tipo")
 
@@ -178,7 +165,6 @@ func (h *DbConnectionHandler) GetAllConnections(c *fiber.Ctx) error {
 	})
 }
 
-// GetConnectionsPaginated obtiene conexiones con paginación
 func (h *DbConnectionHandler) GetConnectionsPaginated(c *fiber.Ctx) error {
 	page := 1
 	pageSize := 10
@@ -211,7 +197,6 @@ func (h *DbConnectionHandler) GetConnectionsPaginated(c *fiber.Ctx) error {
 	})
 }
 
-// UpdateConnection actualiza una conexión existente
 func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -232,7 +217,6 @@ func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 		})
 	}
 
-	// Verificar que el ID del parámetro coincida con el del body
 	if uint(id) != req.ID {
 		return c.Status(fiber.StatusBadRequest).JSON(APIResponse{
 			Success: false,
@@ -240,9 +224,6 @@ func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 		})
 	}
 
-	// Se parte del registro guardado (no de uno nuevo) para conservar la
-	// contraseña cuando no viene en el request, y created_at, que repo.Save
-	// pisaría con el valor cero.
 	connection, err := h.service.GetConnection(uint(id))
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(APIResponse{
@@ -276,7 +257,6 @@ func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 		connection.IsActive = *req.IsActive
 	}
 
-	// Actualizar conexión usando el servicio
 	if err := h.service.UpdateConnection(connection); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(APIResponse{
 			Success: false,
@@ -292,7 +272,6 @@ func (h *DbConnectionHandler) UpdateConnection(c *fiber.Ctx) error {
 	})
 }
 
-// DeleteConnection elimina permanentemente una conexión
 func (h *DbConnectionHandler) DeleteConnection(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -318,7 +297,6 @@ func (h *DbConnectionHandler) DeleteConnection(c *fiber.Ctx) error {
 	})
 }
 
-// SoftDeleteConnection elimina lógicamente una conexión
 func (h *DbConnectionHandler) SoftDeleteConnection(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -344,7 +322,6 @@ func (h *DbConnectionHandler) SoftDeleteConnection(c *fiber.Ctx) error {
 	})
 }
 
-// TestConnection prueba una conexión existente
 func (h *DbConnectionHandler) TestConnection(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -377,7 +354,6 @@ func (h *DbConnectionHandler) TestConnection(c *fiber.Ctx) error {
 	})
 }
 
-// TestConnectionByConfig prueba una conexión sin guardarla
 func (h *DbConnectionHandler) TestConnectionByConfig(c *fiber.Ctx) error {
 	var req CreateConnectionRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -388,7 +364,6 @@ func (h *DbConnectionHandler) TestConnectionByConfig(c *fiber.Ctx) error {
 		})
 	}
 
-	// Convertir request a modelo
 	connection := &models.DbConnection{
 		ServerName:   req.ServerName,
 		Host:         req.Host,
@@ -421,7 +396,6 @@ func (h *DbConnectionHandler) TestConnectionByConfig(c *fiber.Ctx) error {
 	})
 }
 
-// GetConnectionsStats obtiene estadísticas de las conexiones
 func (h *DbConnectionHandler) GetConnectionsStats(c *fiber.Ctx) error {
 	total, err := h.service.GetConnectionsCount()
 	if err != nil {
@@ -454,16 +428,11 @@ func (h *DbConnectionHandler) GetConnectionsStats(c *fiber.Ctx) error {
 	})
 }
 
-// RegisterRoutes registra todas las rutas del handler. El listado (GET /)
-// queda abierto a cualquier autenticado, incluido el rol "consultas", que lo
-// necesita para elegir la base antes de consultar Reportes/DUAS Monitor;
-// todo lo demás (detalle, stats, crear/editar/eliminar/test) es solo admin.
 func (h *DbConnectionHandler) RegisterRoutes(router fiber.Router, requireAdmin fiber.Handler) {
 	connections := router.Group("/connections")
 
 	connections.Get("/", h.GetAllConnections)
 
-	// "/test" y "/stats" antes que "/:id" para que no los capture como ID.
 	connections.Post("/test", requireAdmin, h.TestConnectionByConfig)
 	connections.Get("/stats", requireAdmin, h.GetConnectionsStats)
 	connections.Get("/paginated", requireAdmin, h.GetConnectionsPaginated)

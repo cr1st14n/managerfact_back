@@ -12,8 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// toNullString convierte un string vacío en NULL para respetar la semántica
-// "@param IS NULL" del query (usado en todas las consultas parametrizadas).
 func toNullString(s string) any {
 	if s == "" {
 		return nil
@@ -35,10 +33,6 @@ func NewConsultasService(r *repositories.ConsutasRepository, u *repositories.Usu
 	}
 }
 
-// dataFacturasQuery es el reporte completo de facturación: documento fiscal +
-// detalle + sucursal + paquete (offline/contingencia) + evento + usuario que
-// registró el documento. Todos los filtros son opcionales salvo el rango de
-// fechas, que se aplica sobre created_date (fecha de registro del documento).
 const dataFacturasQuery = `
 declare @NumeroFactura         numeric(19,2) = ?
 declare @CodigoIntegracion     varchar(50)   = ?
@@ -139,27 +133,23 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 	if errServer != nil {
 		return nil, errServer
 	}
-	// Construcción del DSN (Data Source Name) para SQL Server
+
 	dsn := server.DSN()
 
 	var db *gorm.DB
 
-	// Intentar conectar primero para verificar si hay conexión activa
 	db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("no se pudo conectar: %w", err)
 	}
 
-	// Verificar si la conexión está activa
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer sqlDB.Close()
 
-	// Ping para confirmar conexión
 	if err := sqlDB.Ping(); err != nil {
-		// Si falla, intentar crear nueva conexión
 		db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 		if err != nil {
 			return nil, fmt.Errorf("error al crear nueva conexión: %w", err)
@@ -174,7 +164,7 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 	if err != nil {
 		return nil, fmt.Errorf("fechaHasta inválida: %w", err)
 	}
-	// Límite superior exclusivo (inicio del día siguiente).
+
 	fechaHastaExclusiva := fechaHasta.AddDate(0, 0, 1)
 
 	var numeroFactura any
@@ -213,8 +203,6 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 		idSucursal = sid
 	}
 
-	// El filtro de código de producto admite selección múltiple, por lo que se
-	// arma un IN (...) con tantos placeholders como códigos se hayan enviado.
 	query := dataFacturasQuery
 	args := []any{
 		numeroFactura,
@@ -245,14 +233,9 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 		return nil, fmt.Errorf("error al buscar facturas: %w", err)
 	}
 
-	// if len(facturas) == 0 {
-	// 	return nil, fmt.Errorf("no se encontraron facturas")
-	// }
-
 	return &facturas, nil
 }
 
-// BuscarDuas ejecuta la consulta DUAS contra la base de datos seleccionada
 func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusquedaParams) (*models.DuasResultado, error) {
 	idServerParse, err := strconv.ParseInt(idServer, 10, 64)
 	if err != nil {
@@ -264,7 +247,6 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 		return nil, errServer
 	}
 
-	// Construcción del DSN para SQL Server
 	dsn := Server.DSN()
 
 	db, err := gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
@@ -286,9 +268,6 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 	var ResultadosCentral []models.DuasResultadoCentral
 	var ResultadosLocal []models.DuasResultadoLocal
 
-	// toNull convierte un string vacío en NULL para respetar la semántica
-	// "@param IS NULL" del query (clave para los parámetros DATE: '' no es
-	// convertible a DATE en SQL Server y rompería la consulta).
 	toNull := toNullString
 	var Query string
 	if Server.Type == "duas" {
@@ -318,7 +297,7 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 			toNull(params.Apellido),
 			toNull(params.NumeroVuelo),
 			toNull(params.Asiento),
-			nil, // @origen: sin parámetro de búsqueda por ahora
+			nil, 
 			toNull(params.FechaDesde),
 			toNull(params.FechaHasta),
 		).Scan(&ResultadosCentral).Error; err != nil {
@@ -353,82 +332,20 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 			toNull(params.Apellido),
 			toNull(params.NumeroVuelo),
 			toNull(params.Asiento),
-			nil, // @origen: sin parámetro de búsqueda por ahora
+			nil, 
 			toNull(params.FechaDesde),
 			toNull(params.FechaHasta),
 		).Scan(&ResultadosLocal).Error; err != nil {
 			return nil, fmt.Errorf("error ejecutando consulta DUAS Local: %w", err)
 		}
 	}
-	// 	if Server.Type == "duas_central" {
-	// 		Query = `
-	// 			DECLARE @nombre      NVARCHAR(50) = ?
-	// 			DECLARE @apellido    NVARCHAR(50) = ?
-	// 			DECLARE @vuelo       NVARCHAR(10) = ?
-	// 			DECLARE @fecha_desde DATE         = ?
-	// 			DECLARE @fecha_hasta DATE         = ?
-	// 			DECLARE @asiento     NVARCHAR(10) = ?
-	// 			DECLARE @ticket      NVARCHAR(13) = ?
 
-	// 			SELECT
-	// 				t.IDTES_FACTURA_ITINERARIO,
-	// 				t.FAC_NROFACTURA,
-	// 				t.FAC_NROVUELO,
-	// 				t.FAC_FECHAHORA_VUELO,
-	// 				t.FAC_MONTO,
-	// 				t.IDA_ESTADOFACTURA,
-	// 				t.FECHACREACION,
-	// 				t.USUARIOCREACION,
-	// 				t.URL_SIN,
-	// 				t.FAC_DETALLEFACTURA,
-	// 				t.FAC_FECHAEMISION_FACTURA
-
-	// 			FROM TES_FACTURAITINERARIO t
-	// 			CROSS APPLY (
-	// 				SELECT
-	// 					UPPER(SUBSTRING(t.FAC_DETALLEFACTURA, 3, 20)) AS bloqueNombre
-	// 			) p
-	// 			WHERE
-	// 				(@apellido IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@apellido) + '%')
-	// 				AND (@nombre   IS NULL OR p.bloqueNombre LIKE '%' + UPPER(@nombre)   + '%')
-	// 				AND (@vuelo    IS NULL OR t.FAC_NROVUELO = @vuelo)
-	// 				AND (
-	// 					@fecha_desde IS NULL
-	// 					OR (@fecha_hasta IS NULL     AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) = @fecha_desde)
-	// 					OR (@fecha_hasta IS NOT NULL AND CAST(t.FAC_FECHAHORA_VUELO AS DATE) BETWEEN @fecha_desde AND @fecha_hasta)
-	// 				)
-	// 				AND (@asiento IS NULL OR t.FAC_DETALLEFACTURA LIKE '%' + @asiento + '%')
-	// 				AND (@ticket  IS NULL OR
-	// 					CASE WHEN CHARINDEX('2A', t.FAC_DETALLEFACTURA) > 0
-	// 						THEN SUBSTRING(t.FAC_DETALLEFACTURA, CHARINDEX('2A', t.FAC_DETALLEFACTURA) + 2, 13)
-	// 						ELSE NULL END = @ticket
-	// 				)
-
-	// 			ORDER BY t.FAC_FECHAHORA_VUELO DESC
-	// `
-	// 		if err := db.Raw(Query,
-	// 			toNull(params.Nombre),
-	// 			toNull(params.Apellido),
-	// 			toNull(params.NumeroVuelo),
-	// 			toNull(params.FechaDesde),
-	// 			toNull(params.FechaHasta),
-	// 			toNull(params.Asiento),
-	// 			toNull(params.Ticket),
-	// 		).Scan(&ResultadosCentral).Error; err != nil {
-	// 			return nil, fmt.Errorf("error ejecutando consulta DUAS Central: %w", err)
-	// 		}
-	// 	}
 	Resultados.ResultadosCentral = ResultadosCentral
 	Resultados.ResultadosLocal = ResultadosLocal
-
-	// Parsear el BCBP embebido en FAC_DETALLEFACTURA para poblar los campos
-	// que la tabla del front necesita (apellido, nombre, origen, etc.).
 
 	return &Resultados, nil
 }
 
-// sqlSubstring replica el comportamiento de SUBSTRING de SQL Server:
-// posición inicial 1-based y longitud recortada al final de la cadena.
 func sqlSubstring(s string, start, length int) string {
 	r := []rune(s)
 	if start < 1 {
@@ -443,19 +360,12 @@ func sqlSubstring(s string, start, length int) string {
 	return string(r[from:to])
 }
 
-// parseBCBP descompone FAC_DETALLEFACTURA (boarding pass BCBP) en los campos
-// del resultado, equivalente a las expresiones SUBSTRING/CHARINDEX del query.
-
 func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales, error) {
 	idServer_parse, err := strconv.ParseInt(idServer, 10, 64)
 	if err != nil {
 		return nil, err
 	}
 
-	// Primero la copia local (la que el admin actualiza desde /conexiones):
-	// evita conectarse a producción en cada selección. Si la conexión nunca
-	// se actualizó, o la lectura local falla, se cae a la consulta en vivo de
-	// siempre.
 	if cache, errCache := s.SucursalesCache.ListByConexion(uint(idServer_parse)); errCache != nil {
 		fmt.Printf("Error leyendo copia local de sucursales (conexión %d), se consulta en vivo: %v\n", idServer_parse, errCache)
 	} else if len(cache) > 0 {
@@ -467,27 +377,23 @@ func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales
 	if errServer != nil {
 		return nil, errServer
 	}
-	// Construcción del DSN (Data Source Name) para SQL Server
+
 	dsn := server.DSN()
 
 	var db *gorm.DB
 
-	// Intentar conectar primero para verificar si hay conexión activa
 	db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("no se pudo conectar: %w", err)
 	}
 
-	// Verificar si la conexión está activa
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer sqlDB.Close()
 
-	// Ping para confirmar conexión
 	if err := sqlDB.Ping(); err != nil {
-		// Si falla, intentar crear nueva conexión
 		db, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 		if err != nil {
 			return nil, fmt.Errorf("error al crear nueva conexión: %w", err)
@@ -501,12 +407,6 @@ func (s *ConsultasService) Sucursales(idServer string) (*[]models.SFE_sucursales
 	return &servidores, nil
 }
 
-// facturasMesQuery replica la consulta manual mensual: facturas VERIFICADAS de
-// una sucursal y un código de producto, filtradas por fecha_emision. Se une
-// con sfe_sucursal para exigir que el id de sucursal corresponda al
-// codigo_sucursal_sin sobre el que el handler validó el acceso del usuario.
-// Las tablas se leen WITH (NOLOCK) para no bloquear ni saturar la base de
-// producción del facturador (lectura sucia aceptable en un reporte histórico).
 const facturasMesQuery = `
 declare @Producto    varchar(20) = ?
 declare @IdSucursal  int         = ?
@@ -527,7 +427,6 @@ WHERE sddf.codigo_producto_sfe = @Producto
 ORDER BY sdf.fecha_emision ASC;
 `
 
-// FacturasMes devuelve las facturas verificadas del mes indicado (anio/mes).
 func (s *ConsultasService) FacturasMes(idServer int64, idSucursal, codigoSin int, producto string, anio, mes int) ([]models.FacturaMensual, error) {
 	server, err := s.ConsultasRepo.GetServidorById(idServer)
 	if err != nil {
