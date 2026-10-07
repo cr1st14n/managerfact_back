@@ -107,8 +107,8 @@ LEFT JOIN FacturacionNaabol.dbo.sfe_evento se
 LEFT JOIN FacturacionNaabol.dbo.auth_usuario au
     ON au.id = sdf.created_by
 
-WHERE sdf.created_date >= @FechaDesde
-  AND sdf.created_date <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND (@NumeroFactura         IS NULL OR sdf.numero_factura        = @NumeroFactura)
   AND (@CodigoIntegracion     IS NULL OR sdf.codigo_integracion    = @CodigoIntegracion)
   AND (@CodigoCliente         IS NULL OR sdf.codigo_cliente        = @CodigoCliente)
@@ -120,7 +120,7 @@ WHERE sdf.created_date >= @FechaDesde
   AND (@IdSucursal            IS NULL OR ss.id                     = @IdSucursal)
   {{CODIGO_PRODUCTO_FILTER}}
 
-ORDER BY sdf.created_date DESC;
+ORDER BY {{FECHA_COLUMN}} DESC;
 `
 
 func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]models.SFEReporteFacturador, error) {
@@ -203,7 +203,11 @@ func (s *ConsultasService) DataFacturas(data models.Json_consulta_data) (*[]mode
 		idSucursal = sid
 	}
 
-	query := dataFacturasQuery
+	fechaColumna, err := ColumnaTipoFecha(data.TipoFecha, string(FechaCreacion))
+	if err != nil {
+		return nil, err
+	}
+	query := strings.ReplaceAll(dataFacturasQuery, "{{FECHA_COLUMN}}", fechaColumna)
 	args := []any{
 		numeroFactura,
 		toNullString(data.CodigoIntegracion),
@@ -297,7 +301,7 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 			toNull(params.Apellido),
 			toNull(params.NumeroVuelo),
 			toNull(params.Asiento),
-			nil, 
+			nil,
 			toNull(params.FechaDesde),
 			toNull(params.FechaHasta),
 		).Scan(&ResultadosCentral).Error; err != nil {
@@ -332,7 +336,7 @@ func (s *ConsultasService) BuscarDuas(idServer string, params models.DuasBusqued
 			toNull(params.Apellido),
 			toNull(params.NumeroVuelo),
 			toNull(params.Asiento),
-			nil, 
+			nil,
 			toNull(params.FechaDesde),
 			toNull(params.FechaHasta),
 		).Scan(&ResultadosLocal).Error; err != nil {
@@ -423,11 +427,11 @@ WHERE sddf.codigo_producto_sfe = @Producto
   AND sdf.id_sfe_sucursal = @IdSucursal
   AND ss.codigo_sucursal_sin = @CodigoSin
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
-  AND sdf.fecha_emision >= @FechaDesde AND sdf.fecha_emision < @FechaHasta
-ORDER BY sdf.fecha_emision ASC;
+  AND {{FECHA_COLUMN}} >= @FechaDesde AND {{FECHA_COLUMN}} < @FechaHasta
+ORDER BY {{FECHA_COLUMN}} ASC;
 `
 
-func (s *ConsultasService) FacturasMes(idServer int64, idSucursal, codigoSin int, producto string, anio, mes int) ([]models.FacturaMensual, error) {
+func (s *ConsultasService) FacturasMes(idServer int64, idSucursal, codigoSin int, producto string, anio, mes int, tipoFecha ...string) ([]models.FacturaMensual, error) {
 	server, err := s.ConsultasRepo.GetServidorById(idServer)
 	if err != nil {
 		return nil, err
@@ -447,8 +451,17 @@ func (s *ConsultasService) FacturasMes(idServer int64, idSucursal, codigoSin int
 	desde := time.Date(anio, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
 	hasta := desde.AddDate(0, 1, 0)
 
+	valorTipo := ""
+	if len(tipoFecha) > 0 {
+		valorTipo = tipoFecha[0]
+	}
+	columna, err := ColumnaTipoFecha(valorTipo, string(FechaEmision))
+	if err != nil {
+		return nil, err
+	}
+	query := strings.ReplaceAll(facturasMesQuery, "{{FECHA_COLUMN}}", columna)
 	var facturas []models.FacturaMensual
-	if err := db.Raw(facturasMesQuery, producto, idSucursal, codigoSin, desde, hasta).Scan(&facturas).Error; err != nil {
+	if err := db.Raw(query, producto, idSucursal, codigoSin, desde, hasta).Scan(&facturas).Error; err != nil {
 		return nil, fmt.Errorf("error al buscar facturas del mes: %w", err)
 	}
 	return facturas, nil

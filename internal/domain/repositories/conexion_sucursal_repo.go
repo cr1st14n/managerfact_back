@@ -37,7 +37,7 @@ func (r *ConexionSucursalRepo) Resumen() ([]ResumenSucursales, error) {
 	return resumen, err
 }
 
-// No borrar sucursales ausentes del origen: se conservan en la copia local.
+// Las sucursales ausentes del origen no se borran: se conservan en la copia local.
 func (r *ConexionSucursalRepo) Upsert(conexionID uint, filas []models.ConexionSucursal) (int, error) {
 	if len(filas) == 0 {
 		return 0, nil

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Un error de transporte pausa la sucursal este ciclo; se reintenta tras cooldownRevision para no saturar un servidor caído.
+// Un error de transporte pausa la sucursal hasta cooldownRevision para no saturar un servidor caído.
 type EnvioWorker struct {
 	facturaPrevalorada *FacturaPrevaloradaService
 	facturaAnulacion   *FacturaAnulacionService

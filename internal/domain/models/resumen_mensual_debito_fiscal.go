@@ -1,6 +1,6 @@
 package models
 
-// Este total debe coincidir con el libro y lo declarado al SIN; revisar fechas de emisión/envío si difiere.
+// Los meses agrupan por la fecha elegida (tipoFecha), no siempre por emisión.
 type ResumenMensualDebitoFiscal struct {
 	Anio             int     `json:"anio" gorm:"column:anio"`
 	Mes              int     `json:"mes" gorm:"column:mes"`

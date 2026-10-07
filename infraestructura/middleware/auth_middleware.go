@@ -46,7 +46,7 @@ func RequireAdmin(usuarioService *services.UsuarioService) fiber.Handler {
 	}
 }
 
-// requireNoConsultas debe limitar este rol a Reportes/DUAS y dependencias de solo lectura.
+// requireNoConsultas limita este rol a Reportes/DUAS y dependencias de solo lectura.
 func RequireNoConsultas(usuarioService *services.UsuarioService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		usuarioID, ok := c.Locals(UsuarioIDLocal).(uint)

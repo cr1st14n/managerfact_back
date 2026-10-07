@@ -47,6 +47,12 @@ func (h *ResumenContableHandler) verificarAccesoTotal(c *fiber.Ctx) bool {
 }
 
 func (h *ResumenContableHandler) leerFechas(c *fiber.Ctx) (fechaDesde, fechaHastaExclusiva time.Time, ok bool) {
+	tipoFecha := c.Query("tipoFecha")
+	if _, err := services.ColumnaTipoFecha(tipoFecha, string(services.FechaEmision)); err != nil {
+		c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": err.Error()})
+		return time.Time{}, time.Time{}, false
+	}
+	c.Locals("tipoFecha", tipoFecha)
 	var errValidacion []string
 	fechaDesde = utils.ValidarFecha(&errValidacion, c.Query("fechaDesde"), "El campo fechaDesde es requerido")
 	fechaHasta := utils.ValidarFecha(&errValidacion, c.Query("fechaHasta"), "El campo fechaHasta es requerido")
@@ -76,7 +82,7 @@ func (h *ResumenContableHandler) leerPeriodo(c *fiber.Ctx) (idServer int64, fech
 	return idServer, fechaDesde, fechaHastaExclusiva, ok
 }
 
-// Usar el agregado SQL en pantalla para no traer miles de facturas solo para sumarlas.
+// La pantalla usa el agregado SQL para no traer miles de facturas solo para sumarlas.
 func (h *ResumenContableHandler) LibroVentasIvaResumen(c *fiber.Ctx) error {
 	if !h.verificarAccesoTotal(c) {
 		return nil
@@ -86,7 +92,7 @@ func (h *ResumenContableHandler) LibroVentasIvaResumen(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.LibroVentasIvaResumen(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.LibroVentasIvaResumen(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -109,7 +115,7 @@ func (h *ResumenContableHandler) LibroVentasIva(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.LibroVentasIva(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.LibroVentasIva(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -132,7 +138,7 @@ func (h *ResumenContableHandler) ResumenMensualDebitoFiscal(c *fiber.Ctx) error 
 		return nil
 	}
 
-	data, err := h.ResumenContableService.ResumenMensualDebitoFiscal(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.ResumenMensualDebitoFiscal(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -149,7 +155,7 @@ func (h *ResumenContableHandler) ResumenMensualDebitoFiscal(c *fiber.Ctx) error 
 func (h *ResumenContableHandler) totalesTodosServidores(
 	c *fiber.Ctx,
 	mensaje string,
-	consultar func(ambiente string, desde, hasta time.Time) ([]models.ServidorTotales, error),
+	consultar func(ambiente string, desde, hasta time.Time, tipoFecha ...string) ([]models.ServidorTotales, error),
 ) error {
 	if !h.verificarAccesoTotal(c) {
 		return nil
@@ -163,7 +169,7 @@ func (h *ResumenContableHandler) totalesTodosServidores(
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Ambiente inválido"})
 	}
 
-	data, err := consultar(ambiente, fechaDesde, fechaHastaExclusiva)
+	data, err := consultar(ambiente, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -194,7 +200,7 @@ func (h *ResumenContableHandler) NotasCreditoDebito(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.NotasCreditoDebito(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.NotasCreditoDebito(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -217,7 +223,7 @@ func (h *ResumenContableHandler) FacturacionPorActividad(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.FacturacionPorActividad(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.FacturacionPorActividad(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -240,7 +246,7 @@ func (h *ResumenContableHandler) IngresosPorProducto(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.IngresosPorProducto(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.IngresosPorProducto(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -263,7 +269,7 @@ func (h *ResumenContableHandler) IngresosPorSucursalPos(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.IngresosPorSucursalPos(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.IngresosPorSucursalPos(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -286,7 +292,7 @@ func (h *ResumenContableHandler) IngresosPorMetodoPago(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.IngresosPorMetodoPago(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.IngresosPorMetodoPago(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -309,7 +315,7 @@ func (h *ResumenContableHandler) IngresosPorMoneda(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.IngresosPorMoneda(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.IngresosPorMoneda(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -323,7 +329,6 @@ func (h *ResumenContableHandler) IngresosPorMoneda(c *fiber.Ctx) error {
 	})
 }
 
-// Mantener el límite TOP: el número de clientes distintos puede ser grande.
 func (h *ResumenContableHandler) FacturacionPorCliente(c *fiber.Ctx) error {
 	if !h.verificarAccesoTotal(c) {
 		return nil
@@ -349,7 +354,7 @@ func (h *ResumenContableHandler) FacturacionPorCliente(c *fiber.Ctx) error {
 		top = topValor
 	}
 
-	data, err := h.ResumenContableService.FacturacionPorCliente(idServer, fechaDesde, fechaHastaExclusiva, top)
+	data, err := h.ResumenContableService.FacturacionPorCliente(idServer, fechaDesde, fechaHastaExclusiva, top, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",
@@ -372,7 +377,7 @@ func (h *ResumenContableHandler) EmisionPorUsuario(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ResumenContableService.EmisionPorUsuario(idServer, fechaDesde, fechaHastaExclusiva)
+	data, err := h.ResumenContableService.EmisionPorUsuario(idServer, fechaDesde, fechaHastaExclusiva, c.Locals("tipoFecha").(string))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",

@@ -83,6 +83,9 @@ func (h *ConsultasHandler) DataFacturas(c *fiber.Ctx) error {
 		utils.ValidarEntero(&errValidacion, dataIn.NumeroFactura, "El campo numeroFactura es requerido")
 	}
 	dataIn.CodigoProducto = utils.LimpiarListaOpcional(dataIn.CodigoProducto)
+	if _, err := services.ColumnaTipoFecha(dataIn.TipoFecha, string(services.FechaCreacion)); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": err.Error()})
+	}
 	FechaDesde_parse := utils.ValidarFecha(&errValidacion, dataIn.FechaDesde, "El campo fechaDesde es requerido")
 	FechaHasta_parse := utils.ValidarFecha(&errValidacion, dataIn.FechaHasta, "El campo fechaHasta es requerido")
 	dataIn.Sucursal = utils.ValidarCampoOpcional(&errValidacion, dataIn.Sucursal)
@@ -179,6 +182,10 @@ func (h *ConsultasHandler) FacturasMes(c *fiber.Ctx) error {
 	codigoSin := c.Query("codigoSucursalSin")
 	codigoSinInt, errSin := strconv.Atoi(codigoSin)
 	producto := strings.TrimSpace(c.Query("codigoProducto"))
+	tipoFecha := c.Query("tipoFecha")
+	if _, err := services.ColumnaTipoFecha(tipoFecha, string(services.FechaEmision)); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": err.Error()})
+	}
 	anio, errAnio := strconv.Atoi(c.Query("anio"))
 	mes, errMes := strconv.Atoi(c.Query("mes"))
 
@@ -193,7 +200,7 @@ func (h *ConsultasHandler) FacturasMes(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, err := h.ConsultasService.FacturasMes(idServer, idSucursal, codigoSinInt, producto, anio, mes)
+	data, err := h.ConsultasService.FacturasMes(idServer, idSucursal, codigoSinInt, producto, anio, mes, tipoFecha)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"message": "Error de consulta",

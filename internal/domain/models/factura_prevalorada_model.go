@@ -20,7 +20,7 @@ type FacturaPrevalorada struct {
 	Detalle         string  `json:"detalle" gorm:"type:varchar(255);not null"`
 	CodigoProducto  string  `json:"codigo_producto" gorm:"type:varchar(30);not null"`
 	CostoDuaDolares float64 `json:"costo_dua_dolares" gorm:"not null"`
-		// Usar date para evitar que UTC-4 desplace un día las fechas sin hora importadas del Excel.
+		// El tipo date evita que UTC-4 desplace un día las fechas sin hora importadas del Excel.
 	FechaCompraBoleto time.Time `json:"fecha_compra_boleto" gorm:"type:date;not null"`
 
 	TipoCambio float64 `json:"tipo_cambio" gorm:"not null"`

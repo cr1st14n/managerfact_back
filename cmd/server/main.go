@@ -73,7 +73,7 @@ func InitDatabase(config *Config) *gorm.DB {
 	return db
 }
 
-// Migrar con AT TIME ZONE 'UTC': el cast implícito usa UTC-4 y desplaza un día las fechas importadas.
+// La migración usa AT TIME ZONE 'UTC': el cast implícito usa UTC-4 y desplaza un día las fechas importadas.
 func MigrarFechasPrevaloradaADate(db *gorm.DB) error {
 	var tipoActual string
 	err := db.Raw(`
@@ -282,7 +282,6 @@ func SetupRoutes(
 
 	requireAdmin := middleware.RequireAdmin(usuarioService)
 
-		// Mantener requireNoConsultas scopeado a rutas de consulta y dependencias de solo lectura.
 	requireNoConsultas := middleware.RequireNoConsultas(usuarioService)
 
 	dbConnectionHandler.RegisterRoutes(protegido, requireAdmin)

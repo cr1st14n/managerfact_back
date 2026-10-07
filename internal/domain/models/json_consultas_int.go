@@ -16,4 +16,5 @@ type Json_consulta_data struct {
 	EstadoDocumentoFiscal string `json:"estadoDocumentoFiscal"`
 	CodigoSucursalSin     string `json:"codigoSucursalSin"`
 	TipoEmision           string `json:"tipoEmision"`
+	TipoFecha             string `json:"tipoFecha"`
 }

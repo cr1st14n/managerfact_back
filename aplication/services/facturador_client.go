@@ -83,7 +83,7 @@ func redondear2(valor float64) float64 {
 // Bolivia usa UTC-4 sin horario de verano.
 var zonaLaPaz = time.FixedZone("-04:00", -4*60*60)
 
-// La emisión diferida conserva el día de factura; para hoy usa hora actual menos 10 min porque el facturador rechaza fechas futuras.
+// La emisión diferida conserva el día; para hoy resta 10 min porque el facturador rechaza fechas futuras.
 func calcularFechaEmision(fechaEmision time.Time) string {
 	ahora := time.Now().In(zonaLaPaz)
 	var momento time.Time

@@ -22,7 +22,7 @@ var (
 	ErrOrigenSucursales = errors.New("no se pudo leer del origen")
 )
 
-// Mantener esta consulta al origen como SELECT fijo, sin parámetros del usuario.
+// La consulta al origen es un SELECT fijo, sin parámetros del usuario.
 const sucursalesOrigenQuery = `
 SELECT id AS sfe_id, codigo_sucursal, codigo_sucursal_sin, nombre, direccion,
        municipio_departamento, estado_sucursal
@@ -73,7 +73,7 @@ func esConexionFacturador(c *models.DbConnection) bool {
 	return strings.Contains(strings.ToLower(c.Type), "facturador")
 }
 
-// Único punto que actualiza la copia local; Reportes solo la leen.
+// Único punto que escribe la copia local; Reportes solo la leen.
 func (s *ConexionSucursalService) Sincronizar(conexionID uint) (*ResultadoSincronizacion, error) {
 	conexion, err := s.conexiones.GetByID(conexionID)
 	if err != nil {

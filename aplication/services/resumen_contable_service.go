@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"managerfact/internal/domain/models"
 	"managerfact/internal/domain/repositories"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,21 @@ import (
 
 const maxConsultasSimultaneas = 5
 
+func queryConTipoFecha(query, valor string) (string, error) {
+	columna, err := ColumnaTipoFecha(valor, string(FechaEmision))
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(query, "{{FECHA_COLUMN}}", columna), nil
+}
+
+func tipoFechaOpcional(valores []string) string {
+	if len(valores) == 0 {
+		return ""
+	}
+	return valores[0]
+}
+
 type ResumenContableService struct {
 	ConsultasRepo repositories.ConsutasRepository
 }
@@ -21,7 +37,7 @@ func NewResumenContableService(r *repositories.ConsutasRepository) *ResumenConta
 	return &ResumenContableService{ConsultasRepo: *r}
 }
 
-// No usar NOLOCK: el débito fiscal requiere lectura consistente; la base es monto_total_sujeto_iva.
+// Sin NOLOCK: el débito fiscal requiere lectura consistente.
 const libroVentasIvaQuery = `
 declare @FechaDesde datetime2 = ?
 declare @FechaHasta datetime2 = ?
@@ -44,8 +60,8 @@ SELECT
     sdf.estado_documento_fiscal
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
 JOIN FacturacionNaabol.dbo.sfe_sucursal ss ON ss.id = sdf.id_sfe_sucursal
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal IN ('VERIFICADO', 'ANULADO')
 ORDER BY ss.nombre, sdf.numero_factura;
 `
@@ -64,8 +80,8 @@ SELECT
                    THEN sdf.monto_total_sujeto_iva ELSE 0 END) * 0.13, 2) AS debito_fiscal
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
 JOIN FacturacionNaabol.dbo.sfe_sucursal ss ON ss.id = sdf.id_sfe_sucursal
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal IN ('VERIFICADO', 'ANULADO')
 GROUP BY ss.nombre
 ORDER BY ss.nombre;
@@ -87,7 +103,7 @@ func abrirServidor(server *models.DbConnection) (*gorm.DB, error) {
 	return db, nil
 }
 
-func (s *ResumenContableService) LibroVentasIva(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.LibroVentaIva, error) {
+func (s *ResumenContableService) LibroVentasIva(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.LibroVentaIva, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -99,13 +115,17 @@ func (s *ResumenContableService) LibroVentasIva(idServer int64, fechaDesde, fech
 	defer sqlDB.Close()
 
 	var filas []models.LibroVentaIva
-	if err := db.Raw(libroVentasIvaQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(libroVentasIvaQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar el libro de ventas IVA: %w", err)
 	}
 	return filas, nil
 }
 
-func (s *ResumenContableService) LibroVentasIvaResumen(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.LibroVentaIvaResumenSucursal, error) {
+func (s *ResumenContableService) LibroVentasIvaResumen(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.LibroVentaIvaResumenSucursal, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -117,20 +137,24 @@ func (s *ResumenContableService) LibroVentasIvaResumen(idServer int64, fechaDesd
 	defer sqlDB.Close()
 
 	var filas []models.LibroVentaIvaResumenSucursal
-	if err := db.Raw(libroVentasIvaResumenQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(libroVentasIvaResumenQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar el resumen del libro de ventas IVA: %w", err)
 	}
 	return filas, nil
 }
 
-// Mantener sin filtro de estado para incluir meses sin facturas como ceros.
+// Sin filtro de estado: incluye meses que solo tienen facturas anuladas (válidas en 0).
 const resumenMensualDebitoFiscalQuery = `
 declare @FechaDesde datetime2 = ?
 declare @FechaHasta datetime2 = ?
 
 SELECT
-    YEAR(sdf.fecha_emision)  AS anio,
-    MONTH(sdf.fecha_emision) AS mes,
+    YEAR({{FECHA_COLUMN}})  AS anio,
+    MONTH({{FECHA_COLUMN}}) AS mes,
     SUM(CASE WHEN sdf.estado_documento_fiscal = 'VERIFICADO' THEN 1 ELSE 0 END) AS facturas_validas,
     SUM(CASE WHEN sdf.estado_documento_fiscal = 'ANULADO'   THEN 1 ELSE 0 END) AS facturas_anuladas,
     SUM(CASE WHEN sdf.estado_documento_fiscal = 'VERIFICADO' THEN sdf.monto_total ELSE 0 END) AS total_facturado,
@@ -138,13 +162,13 @@ SELECT
     ROUND(SUM(CASE WHEN sdf.estado_documento_fiscal = 'VERIFICADO'
                    THEN sdf.monto_total_sujeto_iva ELSE 0 END) * 0.13, 2) AS debito_fiscal
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
-GROUP BY YEAR(sdf.fecha_emision), MONTH(sdf.fecha_emision)
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
+GROUP BY YEAR({{FECHA_COLUMN}}), MONTH({{FECHA_COLUMN}})
 ORDER BY anio, mes;
 `
 
-func (s *ResumenContableService) ResumenMensualDebitoFiscal(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.ResumenMensualDebitoFiscal, error) {
+func (s *ResumenContableService) ResumenMensualDebitoFiscal(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.ResumenMensualDebitoFiscal, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -156,7 +180,11 @@ func (s *ResumenContableService) ResumenMensualDebitoFiscal(idServer int64, fech
 	defer sqlDB.Close()
 
 	var filas []models.ResumenMensualDebitoFiscal
-	if err := db.Raw(resumenMensualDebitoFiscalQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(resumenMensualDebitoFiscalQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar el resumen mensual de débito fiscal: %w", err)
 	}
 	return filas, nil
@@ -175,8 +203,8 @@ FROM FacturacionNaabol.dbo.sfe_sucursal ss
 LEFT JOIN (
     SELECT sdf.id, sdf.id_sfe_sucursal, sdf.monto_total
     FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
-    WHERE sdf.fecha_emision >= @FechaDesde
-      AND sdf.fecha_emision <  @FechaHasta
+    WHERE {{FECHA_COLUMN}} >= @FechaDesde
+      AND {{FECHA_COLUMN}} <  @FechaHasta
       AND sdf.estado_documento_fiscal = 'ANULADO'
       AND EXISTS (
           SELECT 1
@@ -200,19 +228,27 @@ SELECT
 FROM FacturacionNaabol.dbo.sfe_sucursal ss
 LEFT JOIN FacturacionNaabol.dbo.sfe_documento_fiscal sdf
        ON sdf.id_sfe_sucursal = ss.id
-      AND sdf.fecha_emision >= @FechaDesde
-      AND sdf.fecha_emision <  @FechaHasta
+      AND {{FECHA_COLUMN}} >= @FechaDesde
+      AND {{FECHA_COLUMN}} <  @FechaHasta
       AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY ss.id, ss.nombre
 ORDER BY ss.nombre;
 `
 
-func (s *ResumenContableService) FacturasAnuladas(ambiente string, fechaDesde, fechaHasta time.Time) ([]models.ServidorTotales, error) {
-	return s.totalesTodosServidores(ambiente, facturasAnuladasQuery, fechaDesde, fechaHasta)
+func (s *ResumenContableService) FacturasAnuladas(ambiente string, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.ServidorTotales, error) {
+	query, err := queryConTipoFecha(facturasAnuladasQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	return s.totalesTodosServidores(ambiente, query, fechaDesde, fechaHasta)
 }
 
-func (s *ResumenContableService) FacturasValidas(ambiente string, fechaDesde, fechaHasta time.Time) ([]models.ServidorTotales, error) {
-	return s.totalesTodosServidores(ambiente, facturasValidasQuery, fechaDesde, fechaHasta)
+func (s *ResumenContableService) FacturasValidas(ambiente string, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.ServidorTotales, error) {
+	query, err := queryConTipoFecha(facturasValidasQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	return s.totalesTodosServidores(ambiente, query, fechaDesde, fechaHasta)
 }
 
 // Un servidor caído no tumba el reporte; se informa en su fila.
@@ -281,16 +317,16 @@ SELECT
     sdf.credito_fiscal_iva,
     sdf.estado_documento_fiscal
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
   AND (sdf.tipo_documento_sector IN (24, 29)
        OR sdf.numero_factura_original IS NOT NULL
        OR sdf.numero_autorizacion_cuf IS NOT NULL)
-ORDER BY sdf.fecha_emision, sdf.numero_factura;
+ORDER BY {{FECHA_COLUMN}}, sdf.numero_factura;
 `
 
-func (s *ResumenContableService) NotasCreditoDebito(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.NotaCreditoDebito, error) {
+func (s *ResumenContableService) NotasCreditoDebito(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.NotaCreditoDebito, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -302,7 +338,11 @@ func (s *ResumenContableService) NotasCreditoDebito(idServer int64, fechaDesde, 
 	defer sqlDB.Close()
 
 	var filas []models.NotaCreditoDebito
-	if err := db.Raw(notasCreditoDebitoQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(notasCreditoDebitoQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar notas de crédito/débito y conciliación: %w", err)
 	}
 	return filas, nil
@@ -319,14 +359,14 @@ SELECT
     SUM(sdf.monto_total)            AS total_facturado,
     SUM(sdf.monto_total_sujeto_iva) AS base_debito_fiscal
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY sdf.codigo_actividad_economica, sdf.actividad_economica
 ORDER BY total_facturado DESC;
 `
 
-func (s *ResumenContableService) FacturacionPorActividad(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.FacturacionPorActividad, error) {
+func (s *ResumenContableService) FacturacionPorActividad(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.FacturacionPorActividad, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -338,7 +378,11 @@ func (s *ResumenContableService) FacturacionPorActividad(idServer int64, fechaDe
 	defer sqlDB.Close()
 
 	var filas []models.FacturacionPorActividad
-	if err := db.Raw(facturacionPorActividadQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(facturacionPorActividadQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar facturación por actividad económica: %w", err)
 	}
 	return filas, nil
@@ -365,14 +409,14 @@ OUTER APPLY (
     WHERE  p.codigo_producto_sfe = sddf.codigo_producto_sfe
       AND  p.id_sfe_empresa      = ss.id_sfe_empresa
 ) ps
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY sddf.codigo_producto_sfe, sddf.codigo_producto_sin
 ORDER BY subtotal DESC;
 `
 
-func (s *ResumenContableService) IngresosPorProducto(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.IngresosPorProducto, error) {
+func (s *ResumenContableService) IngresosPorProducto(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.IngresosPorProducto, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -384,7 +428,11 @@ func (s *ResumenContableService) IngresosPorProducto(idServer int64, fechaDesde,
 	defer sqlDB.Close()
 
 	var filas []models.IngresosPorProducto
-	if err := db.Raw(ingresosPorProductoQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(ingresosPorProductoQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar ingresos por producto: %w", err)
 	}
 	return filas, nil
@@ -406,15 +454,15 @@ SELECT
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
 JOIN FacturacionNaabol.dbo.sfe_sucursal ss           ON ss.id  = sdf.id_sfe_sucursal
 LEFT JOIN FacturacionNaabol.dbo.sfe_punto_venta spv  ON spv.id = sdf.id_sfe_punto_venta
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY ss.codigo_sucursal, ss.nombre, ss.municipio_departamento,
          spv.codigo_pos, spv.nombre
 ORDER BY ss.nombre, spv.codigo_pos;
 `
 
-func (s *ResumenContableService) IngresosPorSucursalPos(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.IngresosPorSucursalPos, error) {
+func (s *ResumenContableService) IngresosPorSucursalPos(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.IngresosPorSucursalPos, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -426,7 +474,11 @@ func (s *ResumenContableService) IngresosPorSucursalPos(idServer int64, fechaDes
 	defer sqlDB.Close()
 
 	var filas []models.IngresosPorSucursalPos
-	if err := db.Raw(ingresosPorSucursalPosQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(ingresosPorSucursalPosQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar ingresos por sucursal/punto de venta: %w", err)
 	}
 	return filas, nil
@@ -450,14 +502,14 @@ OUTER APPLY (
       AND  p.id_sfe_empresa          = ss.id_sfe_empresa
       AND  p.tipo_parametrica LIKE '%PAGO%'
 ) mp
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY sdf.metodo_pago
 ORDER BY total_facturado DESC;
 `
 
-func (s *ResumenContableService) IngresosPorMetodoPago(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.IngresosPorMetodoPago, error) {
+func (s *ResumenContableService) IngresosPorMetodoPago(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.IngresosPorMetodoPago, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -469,7 +521,11 @@ func (s *ResumenContableService) IngresosPorMetodoPago(idServer int64, fechaDesd
 	defer sqlDB.Close()
 
 	var filas []models.IngresosPorMetodoPago
-	if err := db.Raw(ingresosPorMetodoPagoQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(ingresosPorMetodoPagoQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar ingresos por método de pago: %w", err)
 	}
 	return filas, nil
@@ -497,14 +553,14 @@ OUTER APPLY (
       AND  p.id_sfe_empresa          = ss.id_sfe_empresa
       AND  p.tipo_parametrica LIKE '%MONEDA%'
 ) mo
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY sdf.codigo_moneda, sdf.tipo_cambio, sdf.tipo_cambio_oficial
 ORDER BY total_bs DESC;
 `
 
-func (s *ResumenContableService) IngresosPorMoneda(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.IngresosPorMoneda, error) {
+func (s *ResumenContableService) IngresosPorMoneda(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.IngresosPorMoneda, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -516,13 +572,17 @@ func (s *ResumenContableService) IngresosPorMoneda(idServer int64, fechaDesde, f
 	defer sqlDB.Close()
 
 	var filas []models.IngresosPorMoneda
-	if err := db.Raw(ingresosPorMonedaQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(ingresosPorMonedaQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar ingresos por moneda: %w", err)
 	}
 	return filas, nil
 }
 
-// TOP (@Top) limita el reporte para evitar cargar todos los clientes.
+// TOP (@Top) acota el reporte: puede haber muchos clientes distintos.
 const facturacionPorClienteQuery = `
 declare @FechaDesde datetime2 = ?
 declare @FechaHasta datetime2 = ?
@@ -536,14 +596,14 @@ SELECT TOP (@Top)
     MIN(CAST(sdf.fecha_emision AS date)) AS primera_factura,
     MAX(CAST(sdf.fecha_emision AS date)) AS ultima_factura
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
 GROUP BY sdf.numero_documento, sdf.nombre_razon_social
 ORDER BY total_facturado DESC;
 `
 
-func (s *ResumenContableService) FacturacionPorCliente(idServer int64, fechaDesde, fechaHasta time.Time, top int) ([]models.FacturacionPorCliente, error) {
+func (s *ResumenContableService) FacturacionPorCliente(idServer int64, fechaDesde, fechaHasta time.Time, top int, tipoFecha ...string) ([]models.FacturacionPorCliente, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -555,7 +615,11 @@ func (s *ResumenContableService) FacturacionPorCliente(idServer int64, fechaDesd
 	defer sqlDB.Close()
 
 	var filas []models.FacturacionPorCliente
-	if err := db.Raw(facturacionPorClienteQuery, fechaDesde, fechaHasta, top).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(facturacionPorClienteQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta, top).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar facturación por cliente: %w", err)
 	}
 	return filas, nil
@@ -568,19 +632,19 @@ declare @FechaHasta datetime2 = ?
 SELECT
     sdf.usuario_emision,
     ss.nombre                       AS sucursal,
-    CAST(sdf.fecha_emision AS date) AS dia,
+    CAST({{FECHA_COLUMN}} AS date) AS dia,
     COUNT(*)                        AS facturas,
     SUM(sdf.monto_total)            AS total_facturado
 FROM FacturacionNaabol.dbo.sfe_documento_fiscal sdf
 JOIN FacturacionNaabol.dbo.sfe_sucursal ss ON ss.id = sdf.id_sfe_sucursal
-WHERE sdf.fecha_emision >= @FechaDesde
-  AND sdf.fecha_emision <  @FechaHasta
+WHERE {{FECHA_COLUMN}} >= @FechaDesde
+  AND {{FECHA_COLUMN}} <  @FechaHasta
   AND sdf.estado_documento_fiscal = 'VERIFICADO'
-GROUP BY sdf.usuario_emision, ss.nombre, CAST(sdf.fecha_emision AS date)
+GROUP BY sdf.usuario_emision, ss.nombre, CAST({{FECHA_COLUMN}} AS date)
 ORDER BY dia, sdf.usuario_emision;
 `
 
-func (s *ResumenContableService) EmisionPorUsuario(idServer int64, fechaDesde, fechaHasta time.Time) ([]models.EmisionPorUsuario, error) {
+func (s *ResumenContableService) EmisionPorUsuario(idServer int64, fechaDesde, fechaHasta time.Time, tipoFecha ...string) ([]models.EmisionPorUsuario, error) {
 	db, err := s.conectarServidor(idServer)
 	if err != nil {
 		return nil, err
@@ -592,7 +656,11 @@ func (s *ResumenContableService) EmisionPorUsuario(idServer int64, fechaDesde, f
 	defer sqlDB.Close()
 
 	var filas []models.EmisionPorUsuario
-	if err := db.Raw(emisionPorUsuarioQuery, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
+	query, err := queryConTipoFecha(emisionPorUsuarioQuery, tipoFechaOpcional(tipoFecha))
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw(query, fechaDesde, fechaHasta).Scan(&filas).Error; err != nil {
 		return nil, fmt.Errorf("error al generar emisión por usuario: %w", err)
 	}
 	return filas, nil
